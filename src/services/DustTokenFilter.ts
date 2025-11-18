@@ -3,22 +3,28 @@ import { ethers } from 'ethers';
 
 export class DustTokenFilter {
   private thresholds: DustThresholds;
+  private usdThreshold: number = 10; // USD threshold for dust (<= $10)
 
   constructor(thresholds: DustThresholds = DEFAULT_DUST_THRESHOLDS) {
     this.thresholds = thresholds;
+    this.usdThreshold = 10; // Always use $10 threshold
   }
 
-  // Check if a token is considered "dust"
-  isDustToken(token: TokenInfo, ethPriceUSD: number): boolean {
-    const balanceInETH = this.convertToETH(token);
-    const balanceInUSD = balanceInETH * ethPriceUSD;
-
-    return balanceInETH < this.thresholds.eth || balanceInUSD < this.thresholds.usd;
+  // Check if a token is considered "dust" based on USD value (<= $10, including $0.00)
+  isDustToken(token: TokenInfo, ethPriceUSD?: number): boolean {
+    // Filter: USD value <= $10 (including $0.00)
+    // This includes tokens with zero value or very low value
+    return token.valueUSD <= this.usdThreshold;
   }
 
-  // Filter tokens to get only dust tokens
-  filterDustTokens(tokens: TokenInfo[], ethPriceUSD: number): TokenInfo[] {
+  // Filter tokens to get only dust tokens (USD value <= $10, including $0.00)
+  filterDustTokens(tokens: TokenInfo[], ethPriceUSD?: number): TokenInfo[] {
     return tokens.filter(token => this.isDustToken(token, ethPriceUSD));
+  }
+
+  // Set USD threshold
+  setUSDThreshold(threshold: number): void {
+    this.usdThreshold = threshold;
   }
 
   // Convert token balance to ETH equivalent

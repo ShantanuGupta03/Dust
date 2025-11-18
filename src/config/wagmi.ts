@@ -23,7 +23,7 @@ export const config = createConfig({
       chains,
       options: {
         qrcode: true,
-        projectId: 'Ybfebeeb4c452c0b649c175fee8081a32',
+        projectId: 'bfebeeb4c452c0b649c175fee8081a32',
       },
     }),
   ],

@@ -9,6 +9,7 @@ export interface PriceData {
 
 export class PriceService {
   private baseUrl = 'https://api.coingecko.com/api/v3';
+  private apiKey = 'CG-eUqdE477zX1Y45anFNV8ENZQ';
   private cache: Map<string, PriceData> = new Map();
   private cacheExpiry: Map<string, number> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -17,7 +18,7 @@ export class PriceService {
   async getETHPrice(): Promise<number> {
     try {
       console.log('Fetching ETH price from CoinGecko...');
-      const response = await fetch(`${this.baseUrl}/simple/price?ids=ethereum&vs_currencies=usd`);
+      const response = await fetch(`${this.baseUrl}/simple/price?ids=ethereum&vs_currencies=usd&x_cg_demo_api_key=${this.apiKey}`);
       const data = await response.json();
       console.log('ETH price response:', data);
       return data.ethereum.usd;
@@ -53,7 +54,7 @@ export class PriceService {
       if (baseTokenIds.length > 0) {
         const ids = baseTokenIds.join(',');
         const response = await fetch(
-          `${this.baseUrl}/simple/price?ids=${ids}&vs_currencies=usd,eth`
+          `${this.baseUrl}/simple/price?ids=${ids}&vs_currencies=usd,eth&x_cg_demo_api_key=${this.apiKey}`
         );
         const data = await response.json();
 
@@ -87,11 +88,14 @@ export class PriceService {
     const prices = await this.getTokenPrices(tokenAddresses);
     console.log('Prices received:', prices);
 
+    // Get ETH price
+    const ethPrice = await this.getETHPrice();
+
     return tokens.map(token => {
       const price = prices[token.address];
       if (price) {
         const balanceInETH = parseFloat(token.balanceFormatted) * price.eth;
-        const valueUSD = balanceInETH * prices['0x0000000000000000000000000000000000000000'].usd;
+        const valueUSD = balanceInETH * ethPrice;
         
         console.log(`Token ${token.symbol}: balance=${token.balanceFormatted}, price=${price.eth} ETH, value=${valueUSD} USD`);
         
@@ -100,8 +104,14 @@ export class PriceService {
           valueUSD,
         };
       }
-      console.log(`No price found for token ${token.symbol} (${token.address})`);
-      return token;
+      
+      // For tokens without price data, estimate value as 0 or very low
+      // This allows them to be filtered as dust tokens
+      console.log(`No price found for token ${token.symbol} (${token.address}), setting value to 0`);
+      return {
+        ...token,
+        valueUSD: 0, // Will be treated as dust if < $2
+      };
     });
   }
 
