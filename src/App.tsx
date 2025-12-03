@@ -12,7 +12,7 @@ function App() {
       <header className="premium-card border-b border-white/10 mb-8">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center space-x-4 mb-4">
-            <DustLogo size={56} className="glow-gold" />
+            <DustLogo size={56} className="glow-blue" />
             <div>
               <h1 className="text-4xl font-bold text-gradient mb-2">
                 Dust Token Aggregator

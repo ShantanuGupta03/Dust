@@ -3,9 +3,8 @@ import { ethers } from 'ethers';
 import { ComprehensiveTokenDiscovery } from '../services/ComprehensiveTokenDiscovery';
 import { DustTokenFilter } from '../services/DustTokenFilter';
 import { PriceService } from '../services/PriceService';
-import { TokenConversionService } from '../services/TokenConversionService';
+import { BatchSwapService } from '../services/BatchSwapService';
 import { TokenInfo, DustThresholds, DEFAULT_DUST_THRESHOLDS, CONVERSION_OPTIONS } from '../types/token';
-import DustLogo from './Logo';
 
 // Extend Window interface to include ethereum
 declare global {
@@ -37,11 +36,13 @@ const DustAggregator: React.FC = () => {
   const [converting, setConverting] = useState(false);
   const [customTokenAddress, setCustomTokenAddress] = useState('');
   const [addingCustomToken, setAddingCustomToken] = useState(false);
+  const [slippageTolerance, setSlippageTolerance] = useState(0.5);
+  const [approving, setApproving] = useState(false);
 
   const tokenDiscovery = new ComprehensiveTokenDiscovery();
   const dustFilter = new DustTokenFilter({ ...thresholds, usd: 10 }); // Set USD threshold to $10
   const priceService = new PriceService();
-  const conversionService = new TokenConversionService();
+  const batchSwapService = new BatchSwapService();
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -163,8 +164,56 @@ const DustAggregator: React.FC = () => {
     setSelectedTokens(new Set());
   };
 
+  const batchApproveTokens = async () => {
+    if (selectedTokens.size === 0 || !wallet.address || !wallet.provider) return;
+
+    setApproving(true);
+    setError(null);
+
+    try {
+      const selectedTokenInfos = tokens.filter(token => selectedTokens.has(token.address));
+      
+      if (selectedTokenInfos.length === 0) {
+        setError('No tokens selected');
+        return;
+      }
+
+      // Get signer from provider
+      const signer = await wallet.provider.getSigner();
+      
+      // Prepare approvals
+      const tokenAddresses = selectedTokenInfos
+        .map(token => token.address)
+        .filter(addr => addr !== '0x0000000000000000000000000000000000000000');
+      
+      const amounts = selectedTokenInfos
+        .filter(token => token.address !== '0x0000000000000000000000000000000000000000')
+        .map(token => ethers.parseUnits(token.balanceFormatted, token.decimals));
+
+      // Execute batch approvals
+      const txHashes = await batchSwapService.batchApproveTokens(
+        tokenAddresses,
+        amounts,
+        signer
+      );
+
+      if (txHashes.length > 0) {
+        console.log('Batch approval completed:', txHashes);
+        alert(`✅ Batch approval completed! ${txHashes.length} approval transaction(s) executed.\n\nTransaction hashes:\n${txHashes.join('\n')}`);
+      } else {
+        alert('✅ All tokens are already approved!');
+      }
+    } catch (err) {
+      console.error('Error executing batch approval:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to execute batch approval: ${errorMessage}`);
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const executeConversion = async () => {
-    if (selectedTokens.size === 0 || !wallet.address) return;
+    if (selectedTokens.size === 0 || !wallet.address || !wallet.provider) return;
 
     setConverting(true);
     setError(null);
@@ -172,29 +221,47 @@ const DustAggregator: React.FC = () => {
     try {
       const selectedTokenInfos = tokens.filter(token => selectedTokens.has(token.address));
       
-      // Get conversion quotes
-      const quotes = await conversionService.getBatchConversionQuotes(
-        selectedTokenInfos,
-        selectedToToken,
-        0.5 // 0.5% slippage
-      );
+      if (selectedTokenInfos.length === 0) {
+        setError('No tokens selected');
+        return;
+      }
 
-      // Execute conversions
-      const txHashes = await conversionService.executeBatchConversion(
-        quotes,
-        wallet.address,
-        0.5
-      );
-
-      console.log('Conversion executed:', txHashes);
-      alert(`Conversion executed! Transaction hashes: ${txHashes.join(', ')}`);
+      // Get signer from provider
+      const signer = await wallet.provider.getSigner();
       
-      // Clear selection and reload tokens
-      clearSelection();
-      await loadTokens();
+      // Prepare swaps (1inch handles quotes internally)
+      const swaps = selectedTokenInfos.map((token) => {
+        const amountIn = ethers.parseUnits(token.balanceFormatted, token.decimals);
+        
+        return {
+          fromToken: token,
+          toToken: selectedToToken,
+          amountIn,
+        };
+      });
+
+      // Execute batch swaps
+      const txHashes = await batchSwapService.executeBatchSwaps(
+        swaps,
+        wallet.address,
+        signer,
+        slippageTolerance
+      );
+
+      if (txHashes.length > 0) {
+        console.log('Batch swap executed successfully:', txHashes);
+        alert(`✅ Batch swap completed! ${txHashes.length} transaction(s) executed.\n\nTransaction hashes:\n${txHashes.join('\n')}`);
+        
+        // Clear selection and reload tokens
+        clearSelection();
+        await loadTokens();
+      } else {
+        setError('No swaps were executed. Please try again.');
+      }
     } catch (err) {
-      console.error('Error executing conversion:', err);
-      setError('Failed to execute conversion. Please try again.');
+      console.error('Error executing batch swap:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to execute batch swap: ${errorMessage}`);
     } finally {
       setConverting(false);
     }
@@ -257,12 +324,12 @@ const DustAggregator: React.FC = () => {
     return (
       <div className="max-w-md mx-auto">
         <div className="premium-card text-center">
-          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center glow-gold">
-            <svg className="w-10 h-10 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center glow-blue">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h2 className="text-3xl font-bold mb-4 text-gradient-gold">Connect Your Wallet</h2>
+          <h2 className="text-3xl font-bold mb-4 text-gradient">Connect Your Wallet</h2>
           <p className="text-gray-300 mb-8 text-lg">
             Connect your wallet to start aggregating dust tokens on Base network
           </p>
@@ -340,7 +407,7 @@ const DustAggregator: React.FC = () => {
               placeholder="Enter token contract address (0x...)"
               value={customTokenAddress}
               onChange={(e) => setCustomTokenAddress(e.target.value)}
-              className="flex-1 px-4 py-2 glass rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              className="flex-1 px-4 py-2 glass rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
               onClick={addCustomToken}
@@ -367,7 +434,7 @@ const DustAggregator: React.FC = () => {
                 <p className="text-sm text-gray-400 mb-1">Total Tokens</p>
                 <p className="text-3xl font-bold text-gradient">{tokens.length}</p>
               </div>
-              <div className="glass rounded-xl p-5 border-yellow-500/30 bg-yellow-500/10">
+              <div className="glass rounded-xl p-5 dust-accent-strong">
                 <p className="text-sm text-yellow-400 mb-1">Dust Tokens (USD ≤ $10)</p>
                 <p className="text-3xl font-bold text-yellow-400">{dustTokens.length}</p>
               </div>
@@ -381,8 +448,8 @@ const DustAggregator: React.FC = () => {
                     key={index}
                     className={`glass rounded-xl p-4 transition-all ${
                       token.isDust
-                        ? 'border-yellow-500/50 bg-yellow-500/10 hover:bg-yellow-500/20'
-                        : 'hover:bg-white/10'
+                        ? 'dust-accent-strong hover:bg-yellow-500/20'
+                        : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -395,7 +462,7 @@ const DustAggregator: React.FC = () => {
                         <p className="font-semibold text-gray-100">{parseFloat(token.balanceFormatted).toFixed(6)}</p>
                         <p className="text-sm text-gray-400">${token.valueUSD.toFixed(2)}</p>
                         {token.isDust && (
-                          <span className="inline-block mt-1 text-xs bg-yellow-500/30 text-yellow-300 px-2 py-1 rounded-full border border-yellow-500/50 font-semibold">
+                          <span className="inline-block mt-1 text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full border border-yellow-500/50 font-semibold">
                             Dust
                           </span>
                         )}
@@ -416,15 +483,15 @@ const DustAggregator: React.FC = () => {
 
       {/* Token Conversion - Batch Swap */}
       {dustTokens.length > 0 && (
-        <div className="premium-card border-2 border-yellow-500/30">
+        <div className="premium-card border-2 border-blue-500/30">
           <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center glow-gold">
-              <svg className="w-6 h-6 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center glow-blue">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </div>
             <div>
-              <h3 className="text-2xl font-bold text-gradient-gold mb-1">Batch Swap Dust Tokens</h3>
+              <h3 className="text-2xl font-bold text-gradient mb-1">Batch Swap Dust Tokens</h3>
               <p className="text-sm text-gray-400">Select multiple tokens and convert them in one transaction</p>
             </div>
           </div>
@@ -436,7 +503,7 @@ const DustAggregator: React.FC = () => {
               <div className="flex space-x-2">
                 <button
                   onClick={selectAllDustTokens}
-                  className="glass px-4 py-2 text-sm text-yellow-300 rounded-xl hover:bg-yellow-500/20 transition-all border-yellow-500/30"
+                  className="glass px-4 py-2 text-sm text-blue-300 rounded-xl hover:bg-blue-500/20 transition-all border-blue-500/30"
                 >
                   Select All Dust
                 </button>
@@ -455,8 +522,8 @@ const DustAggregator: React.FC = () => {
                   key={index}
                   className={`glass rounded-xl p-4 cursor-pointer transition-all ${
                     selectedTokens.has(token.address)
-                      ? 'border-yellow-500/50 bg-yellow-500/20 hover:bg-yellow-500/30 glow-gold'
-                      : 'hover:bg-white/10'
+                      ? 'dust-accent-strong hover:bg-yellow-500/30 glow-gold'
+                      : 'hover:bg-white/5'
                   }`}
                   onClick={() => toggleTokenSelection(token.address)}
                 >
@@ -495,7 +562,7 @@ const DustAggregator: React.FC = () => {
                       const option = CONVERSION_OPTIONS.find(opt => opt.tokenAddress === e.target.value);
                       if (option) setSelectedToToken(option);
                     }}
-                    className="w-full px-4 py-2 glass rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    className="w-full px-4 py-2 glass rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {CONVERSION_OPTIONS.map((option) => (
                       <option key={option.tokenAddress} value={option.tokenAddress} className="bg-gray-800">
@@ -511,23 +578,33 @@ const DustAggregator: React.FC = () => {
                     step="0.1"
                     min="0.1"
                     max="50"
-                    defaultValue="0.5"
-                    className="w-full px-4 py-2 glass rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    value={slippageTolerance}
+                    onChange={(e) => setSlippageTolerance(parseFloat(e.target.value) || 0.5)}
+                    className="w-full px-4 py-2 glass rounded-xl text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Convert Button */}
+          {/* Action Buttons */}
           {selectedTokens.size > 0 && (
-            <button
-              onClick={executeConversion}
-              disabled={converting}
-              className="glossy-button w-full text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {converting ? 'Converting...' : `Convert ${selectedTokens.size} Token${selectedTokens.size > 1 ? 's' : ''} to ${selectedToToken.symbol}`}
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={batchApproveTokens}
+                disabled={approving || converting}
+                className="glass px-6 py-3 w-full text-blue-300 rounded-xl hover:bg-blue-500/20 transition-all border-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {approving ? 'Approving...' : `Batch Approve ${selectedTokens.size} Token${selectedTokens.size > 1 ? 's' : ''}`}
+              </button>
+              <button
+                onClick={executeConversion}
+                disabled={converting || approving}
+                className="glossy-button w-full text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {converting ? 'Converting...' : `Convert ${selectedTokens.size} Token${selectedTokens.size > 1 ? 's' : ''} to ${selectedToToken.symbol}`}
+              </button>
+            </div>
           )}
         </div>
       )}
