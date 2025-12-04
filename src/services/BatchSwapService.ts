@@ -4,6 +4,7 @@ import { TokenInfo, ConversionOption } from '../types/token';
 // Uniswap V3 SwapRouter02 ABI
 const SWAP_ROUTER_ABI = [
   'function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)',
+  'function exactInput(bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) external payable returns (uint256 amountOut)',
   'function multicall(uint256 deadline, bytes[] calldata data) external payable returns (bytes[] memory results)',
 ];
 
@@ -132,7 +133,7 @@ export class BatchSwapService {
     }
   }
 
-  // Check if a token has liquidity (pool exists) against common pairs
+  // Check if a token has liquidity (pool exists) against USDC, WETH, or ETH
   async checkTokenLiquidity(tokenAddress: string): Promise<boolean> {
     try {
       // Skip check for native ETH and WETH
@@ -151,8 +152,14 @@ export class BatchSwapService {
         return true;
       }
 
-      // Check against WETH (second most common)
+      // Check against WETH
       const hasWethPool = await this.findBestFeeTier(tokenIn, WETH_ADDRESS, testAmount);
+      if (hasWethPool) {
+        return true;
+      }
+
+      // Check against native ETH (via WETH)
+      // If token can swap to WETH, it can effectively swap to ETH
       if (hasWethPool) {
         return true;
       }
@@ -164,13 +171,62 @@ export class BatchSwapService {
     }
   }
 
-  // Find the best fee tier for a token pair
-  async findBestFeeTier(
+  // Check liquidity with actual swap amount against USDC, WETH, or ETH
+  async checkTokenLiquidityWithAmount(
+    tokenInAddress: string,
+    tokenOutAddress: string,
+    amountIn: bigint
+  ): Promise<boolean> {
+    try {
+      // Skip check for native ETH and WETH
+      if (tokenInAddress === '0x0000000000000000000000000000000000000000' || 
+          tokenInAddress.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+        return true;
+      }
+
+      const tokenIn = tokenInAddress === '0x0000000000000000000000000000000000000000'
+        ? WETH_ADDRESS
+        : tokenInAddress;
+      
+      // Normalize tokenOut - if ETH, use WETH
+      let tokenOut = tokenOutAddress === '0x0000000000000000000000000000000000000000'
+        ? WETH_ADDRESS
+        : tokenOutAddress;
+
+      // If checking against ETH, also check USDC and WETH as alternatives
+      if (tokenOutAddress === '0x0000000000000000000000000000000000000000') {
+        // Check USDC first (most liquid)
+        const usdcAddress = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+        const hasUsdcRoute = await this.findBestRoute(tokenIn, usdcAddress, amountIn);
+        if (hasUsdcRoute) {
+          return true;
+        }
+        
+        // Check WETH (can unwrap to ETH)
+        const hasWethRoute = await this.findBestRoute(tokenIn, WETH_ADDRESS, amountIn);
+        if (hasWethRoute) {
+          return true;
+        }
+        
+        return false;
+      }
+
+      // Check if pool exists and can handle the actual swap amount
+      const bestRoute = await this.findBestRoute(tokenIn, tokenOut, amountIn);
+      return bestRoute !== null;
+    } catch (error) {
+      console.error(`Error checking liquidity with amount for ${tokenInAddress}:`, error);
+      return false;
+    }
+  }
+
+  // Find the best route for a token pair (direct or via WETH)
+  async findBestRoute(
     tokenIn: string,
     tokenOut: string,
     amountIn: bigint
-  ): Promise<{ fee: number; amountOut: bigint } | null> {
-    // Try each fee tier
+  ): Promise<{ fee: number; amountOut: bigint; path?: string; isMultiHop: boolean } | null> {
+    // Try direct swap first
     for (const fee of FEE_TIERS) {
       try {
         const result = await this.quoterContract.quoteExactInputSingle.staticCall({
@@ -183,7 +239,7 @@ export class BatchSwapService {
         
         const amountOut = result[0];
         if (amountOut > 0n) {
-          return { fee, amountOut };
+          return { fee, amountOut, isMultiHop: false };
         }
       } catch (error) {
         // Pool doesn't exist for this fee tier, try next
@@ -220,8 +276,25 @@ export class BatchSwapService {
             const amountOut = result2[0];
             
             if (amountOut > 0n) {
-              // Return the first fee tier, we'll handle routing in executeSwap
-              return { fee: fee1, amountOut };
+              // Build path: tokenIn (20 bytes) + fee1 (3 bytes) + WETH (20 bytes) + fee2 (3 bytes) + tokenOut (20 bytes)
+              // Uniswap V3 path encoding: concatenate addresses and fees as bytes
+              // Remove '0x' prefix and pad fee to 3 bytes
+              const tokenInBytes = ethers.getBytes(tokenIn);
+              const fee1Bytes = ethers.zeroPadValue(ethers.toBeHex(fee1), 3);
+              const wethBytes = ethers.getBytes(WETH_ADDRESS);
+              const fee2Bytes = ethers.zeroPadValue(ethers.toBeHex(fee2), 3);
+              const tokenOutBytes = ethers.getBytes(tokenOut);
+              
+              // Concatenate: tokenIn + fee1 + WETH + fee2 + tokenOut
+              const path = ethers.concat([
+                tokenInBytes,
+                fee1Bytes,
+                wethBytes,
+                fee2Bytes,
+                tokenOutBytes,
+              ]);
+              
+              return { fee: fee1, amountOut, path, isMultiHop: true };
             }
           } catch (error) {
             continue;
@@ -233,13 +306,24 @@ export class BatchSwapService {
     return null;
   }
 
+  // Find the best fee tier for a token pair (backward compatibility)
+  async findBestFeeTier(
+    tokenIn: string,
+    tokenOut: string,
+    amountIn: bigint
+  ): Promise<{ fee: number; amountOut: bigint } | null> {
+    const route = await this.findBestRoute(tokenIn, tokenOut, amountIn);
+    if (!route) return null;
+    return { fee: route.fee, amountOut: route.amountOut };
+  }
+
   // Get swap quote using Uniswap V3
   async getSwapQuote(
     fromToken: TokenInfo,
     toToken: ConversionOption,
     amountIn: bigint,
     slippageTolerance: number = 0.5
-  ): Promise<{ amountOut: bigint; amountOutMinimum: bigint; fee: number }> {
+  ): Promise<{ amountOut: bigint; amountOutMinimum: bigint; fee: number; path?: string; isMultiHop: boolean }> {
     try {
       const tokenIn = fromToken.address === '0x0000000000000000000000000000000000000000'
         ? WETH_ADDRESS
@@ -249,18 +333,40 @@ export class BatchSwapService {
         ? WETH_ADDRESS
         : toToken.tokenAddress;
 
-      // Find best fee tier
-      const bestRoute = await this.findBestFeeTier(tokenIn, tokenOut, amountIn);
+      // If swapping to ETH, try USDC first (most liquid), then WETH
+      if (toToken.tokenAddress === '0x0000000000000000000000000000000000000000') {
+        const usdcAddress = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+        // Try USDC first
+        let bestRoute = await this.findBestRoute(tokenIn, usdcAddress, amountIn);
+        if (bestRoute) {
+          const { amountOut, fee, path, isMultiHop } = bestRoute;
+          const slippageBps = Math.floor(slippageTolerance * 100);
+          const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
+          return { amountOut, amountOutMinimum, fee, path, isMultiHop };
+        }
+        
+        // Fallback to WETH
+        bestRoute = await this.findBestRoute(tokenIn, WETH_ADDRESS, amountIn);
+        if (bestRoute) {
+          const { amountOut, fee, path, isMultiHop } = bestRoute;
+          const slippageBps = Math.floor(slippageTolerance * 100);
+          const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
+          return { amountOut, amountOutMinimum, fee, path, isMultiHop };
+        }
+      }
+
+      // Find best route (direct or multi-hop)
+      const bestRoute = await this.findBestRoute(tokenIn, tokenOut, amountIn);
       
       if (!bestRoute) {
         throw new Error('No liquidity pool found for this token pair');
       }
 
-      const { amountOut, fee } = bestRoute;
+      const { amountOut, fee, path, isMultiHop } = bestRoute;
       const slippageBps = Math.floor(slippageTolerance * 100);
       const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
 
-      return { amountOut, amountOutMinimum, fee };
+      return { amountOut, amountOutMinimum, fee, path, isMultiHop };
     } catch (error) {
       console.error('Error getting swap quote:', error);
       throw new Error(`Failed to get swap quote: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -306,21 +412,19 @@ export class BatchSwapService {
       // Set deadline (20 minutes from now)
       const deadline = Math.floor(Date.now() / 1000) + 1200;
 
+      // Re-fetch quote right before swap to ensure it's fresh and valid
+      // This prevents "Pool liquidity changed" errors
+      console.log('Re-fetching fresh quote before swap...');
+      const freshQuote = await this.getSwapQuote(fromToken, toToken, amountIn, slippageTolerance);
+      
+      if (!freshQuote) {
+        throw new Error('No valid route found. Pool may not have enough liquidity.');
+      }
+
       // Execute swap
-      console.log('Executing swap via Uniswap V3...');
+      console.log(`Executing swap via Uniswap V3 (${freshQuote.isMultiHop ? 'multi-hop' : 'direct'})...`);
       const routerWithSigner = this.routerContract.connect(signer);
       
-      const swapParams = {
-        tokenIn,
-        tokenOut,
-        fee: quote.fee,
-        recipient,
-        deadline,
-        amountIn,
-        amountOutMinimum: quote.amountOutMinimum,
-        sqrtPriceLimitX96: 0,
-      };
-
       // For native ETH swaps, we need to send ETH value
       const txOptions: any = {};
       if (fromToken.address === '0x0000000000000000000000000000000000000000') {
@@ -328,7 +432,50 @@ export class BatchSwapService {
         txOptions.value = 0n;
       }
 
-      const swapTx = await routerWithSigner.exactInputSingle(swapParams, txOptions);
+      let swapTx;
+      
+      if (freshQuote.isMultiHop && freshQuote.path) {
+        // Multi-hop swap using exactInput with path
+        const swapParams = {
+          path: freshQuote.path,
+          recipient,
+          deadline,
+          amountIn,
+          amountOutMinimum: freshQuote.amountOutMinimum,
+        };
+
+        // Try to estimate gas first
+        try {
+          await routerWithSigner.exactInput.estimateGas(swapParams, txOptions);
+        } catch (estimateError) {
+          console.error('Gas estimation failed for multi-hop:', estimateError);
+          throw new Error(`Swap would fail: ${estimateError instanceof Error ? estimateError.message : 'Unknown error'}. The pool may not have enough liquidity for this amount.`);
+        }
+
+        swapTx = await routerWithSigner.exactInput(swapParams, txOptions);
+      } else {
+        // Direct swap using exactInputSingle
+        const swapParams = {
+          tokenIn,
+          tokenOut,
+          fee: freshQuote.fee,
+          recipient,
+          deadline,
+          amountIn,
+          amountOutMinimum: freshQuote.amountOutMinimum,
+          sqrtPriceLimitX96: 0,
+        };
+
+        // Try to estimate gas first
+        try {
+          await routerWithSigner.exactInputSingle.estimateGas(swapParams, txOptions);
+        } catch (estimateError) {
+          console.error('Gas estimation failed:', estimateError);
+          throw new Error(`Swap would fail: ${estimateError instanceof Error ? estimateError.message : 'Unknown error'}. The pool may not have enough liquidity for this amount.`);
+        }
+
+        swapTx = await routerWithSigner.exactInputSingle(swapParams, txOptions);
+      }
 
       console.log('Swap transaction sent:', swapTx.hash);
       const receipt = await swapTx.wait();
