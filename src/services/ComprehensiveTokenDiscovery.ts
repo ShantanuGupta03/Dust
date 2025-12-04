@@ -25,7 +25,7 @@ export class ComprehensiveTokenDiscovery {
     const tokenAddresses = new Set<string>();
 
     try {
-      // Method 1: Get tokens from user's transfer history
+      // Method 1: Get tokens from user's transfer history (both sent and received)
       const transferUrl = `https://api.basescan.org/api?module=account&action=tokentx&address=${userAddress}&startblock=0&endblock=99999999&sort=asc&apikey=${this.basescanApiKey}`;
       
       console.log('Fetching user token transfers from Basescan API...');
@@ -38,7 +38,21 @@ export class ComprehensiveTokenDiscovery {
             tokenAddresses.add(tx.contractAddress.toLowerCase());
           }
         });
-        console.log(`Found ${tokenAddresses.size} tokens from user transfers`);
+        console.log(`Found ${tokenAddresses.size} unique tokens from user transfers`);
+      }
+
+      // Also check internal transactions for token transfers
+      try {
+        const internalTxUrl = `https://api.basescan.org/api?module=account&action=txlistinternal&address=${userAddress}&startblock=0&endblock=99999999&sort=asc&apikey=${this.basescanApiKey}`;
+        const internalResponse = await fetch(internalTxUrl);
+        const internalData = await internalResponse.json();
+        
+        if (internalData.status === '1' && internalData.result) {
+          // Internal transactions might reveal more token interactions
+          console.log(`Found ${internalData.result.length} internal transactions`);
+        }
+      } catch (error) {
+        console.log('Could not fetch internal transactions:', error);
       }
 
       // Method 2: Get popular tokens from Basescan token list
@@ -135,6 +149,16 @@ export class ComprehensiveTokenDiscovery {
     }
   }
 
+  // Check if address is a valid contract
+  async isValidContract(address: string): Promise<boolean> {
+    try {
+      const code = await this.provider.getCode(address);
+      return code !== '0x' && code !== '0x0';
+    } catch (error) {
+      return false;
+    }
+  }
+
   // Get token balance
   async getTokenBalance(tokenAddress: string, userAddress: string): Promise<string> {
     try {
@@ -143,11 +167,23 @@ export class ComprehensiveTokenDiscovery {
         return balance.toString();
       }
 
+      // Check if it's a valid contract first
+      const isValid = await this.isValidContract(tokenAddress);
+      if (!isValid) {
+        return '0'; // Not a contract, skip it
+      }
+
       const contract = this.getContract(tokenAddress);
-      const balance = await contract.balanceOf(userAddress);
+      // Use static call with timeout to avoid hanging
+      const balance = await Promise.race([
+        contract.balanceOf(userAddress),
+        new Promise<bigint>((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        ),
+      ]);
       return balance.toString();
     } catch (error) {
-      console.error(`Error fetching balance for ${tokenAddress}:`, error);
+      // Silently skip invalid contracts
       return '0';
     }
   }
@@ -161,7 +197,7 @@ export class ComprehensiveTokenDiscovery {
     console.log(`Checking balances for ${tokenAddresses.length} tokens...`);
 
     const tokenInfos: TokenInfo[] = [];
-    const batchSize = 20; // Process in batches to avoid rate limits
+    const batchSize = 8; // Reduced to 8 to stay under Base RPC limit of 10 calls per batch
 
     // Process tokens in batches
     for (let i = 0; i < tokenAddresses.length; i += batchSize) {
@@ -170,41 +206,55 @@ export class ComprehensiveTokenDiscovery {
       const totalBatches = Math.ceil(tokenAddresses.length / batchSize);
       console.log(`Processing batch ${batchNum}/${totalBatches} (${batch.length} tokens)...`);
 
-      const batchPromises = batch.map(async (tokenAddress) => {
+      // Process each token sequentially to avoid batch call limit
+      for (const tokenAddress of batch) {
         try {
+          // Get balance first (single call)
           const balance = await this.getTokenBalance(tokenAddress, userAddress);
-          const metadata = await this.getTokenMetadata(tokenAddress);
-          const balanceFormatted = ethers.formatUnits(balance, metadata.decimals);
           
-          // Only include tokens with non-zero balance
-          // Tokens with $0.00 USD value (no price data) will still be included
-          if (balance !== '0' && balance !== '0x0') {
-            return {
-              address: tokenAddress,
-              symbol: metadata.symbol,
-              name: metadata.name,
-              decimals: metadata.decimals,
-              balance,
-              balanceFormatted,
-              valueUSD: 0, // Will be calculated separately
-              isDust: false, // Will be determined by dust logic
-              logoURI: metadata.logoURI,
-            } as TokenInfo;
+          // Only fetch metadata if balance is non-zero (saves calls)
+          if (balance !== '0' && balance !== '0x0' && BigInt(balance) > 0n) {
+            try {
+              const metadata = await this.getTokenMetadata(tokenAddress);
+              const balanceFormatted = ethers.formatUnits(balance, metadata.decimals);
+              
+              tokenInfos.push({
+                address: tokenAddress,
+                symbol: metadata.symbol,
+                name: metadata.name,
+                decimals: metadata.decimals,
+                balance,
+                balanceFormatted,
+                valueUSD: 0, // Will be calculated separately
+                isDust: false, // Will be determined by dust logic
+                logoURI: metadata.logoURI,
+              } as TokenInfo);
+            } catch (metadataError) {
+              // If metadata fetch fails but we have a balance, still include it
+              console.warn(`Could not fetch metadata for ${tokenAddress}, using defaults`);
+              const balanceFormatted = ethers.formatUnits(balance, 18); // Default to 18 decimals
+              
+              tokenInfos.push({
+                address: tokenAddress,
+                symbol: 'UNKNOWN',
+                name: 'Unknown Token',
+                decimals: 18,
+                balance,
+                balanceFormatted,
+                valueUSD: 0,
+                isDust: false,
+              } as TokenInfo);
+            }
           }
-          return null;
         } catch (error) {
-          console.error(`Error processing token ${tokenAddress}:`, error);
-          return null;
+          // Silently skip invalid tokens
+          continue;
         }
-      });
-
-      const results = await Promise.all(batchPromises);
-      const validTokens = results.filter(token => token !== null) as TokenInfo[];
-      tokenInfos.push(...validTokens);
+      }
       
       // Small delay between batches to avoid rate limiting
       if (i + batchSize < tokenAddresses.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
 

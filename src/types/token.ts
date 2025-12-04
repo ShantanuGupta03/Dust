@@ -8,6 +8,8 @@ export interface TokenInfo {
   valueUSD: number;
   isDust: boolean;
   logoURI?: string;
+  hasLiquidity?: boolean; // Whether token has Uniswap liquidity pool
+  liquidityChecked?: boolean; // Whether liquidity check has been performed
 }
 
 export interface DustToken extends TokenInfo {

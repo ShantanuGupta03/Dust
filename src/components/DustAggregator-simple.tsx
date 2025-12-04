@@ -114,13 +114,36 @@ const DustAggregator: React.FC = () => {
       const tokensWithValues = await priceService.updateTokenValues(userTokens);
       console.log('Tokens with values:', tokensWithValues.length);
       
+      // Check liquidity for each token (check against USDC and WETH)
+      console.log('Checking liquidity pools for tokens...');
+      const tokensWithLiquidity = await Promise.all(
+        tokensWithValues.map(async (token) => {
+          try {
+            const hasLiquidity = await batchSwapService.checkTokenLiquidity(token.address);
+            return {
+              ...token,
+              hasLiquidity,
+              liquidityChecked: true,
+            };
+          } catch (error) {
+            console.error(`Error checking liquidity for ${token.symbol}:`, error);
+            return {
+              ...token,
+              hasLiquidity: false,
+              liquidityChecked: true,
+            };
+          }
+        })
+      );
+      console.log(`Liquidity check complete. Swappable: ${tokensWithLiquidity.filter(t => t.hasLiquidity).length}, No liquidity: ${tokensWithLiquidity.filter(t => !t.hasLiquidity).length}`);
+      
       // Filter dust tokens (USD value <= $10, including $0.00)
       console.log('Filtering dust tokens (USD <= $10, including $0.00)...');
-      const dustTokensList = dustFilter.filterDustTokens(tokensWithValues);
+      const dustTokensList = dustFilter.filterDustTokens(tokensWithLiquidity);
       console.log('Dust tokens found:', dustTokensList.length);
       
       // Mark tokens as dust
-      const tokensWithDustFlag = tokensWithValues.map(token => ({
+      const tokensWithDustFlag = tokensWithLiquidity.map(token => ({
         ...token,
         isDust: dustTokensList.some(dt => dt.address === token.address),
       }));
@@ -156,8 +179,13 @@ const DustAggregator: React.FC = () => {
   };
 
   const selectAllDustTokens = () => {
-    const dustAddresses = new Set(dustTokens.map(token => token.address));
-    setSelectedTokens(dustAddresses);
+    // Only select dust tokens that have liquidity (are swappable)
+    const swappableDustAddresses = new Set(
+      dustTokens
+        .filter(token => token.hasLiquidity !== false) // hasLiquidity is true or undefined (not checked yet)
+        .map(token => token.address)
+    );
+    setSelectedTokens(swappableDustAddresses);
   };
 
   const clearSelection = () => {
@@ -229,8 +257,21 @@ const DustAggregator: React.FC = () => {
       // Get signer from provider
       const signer = await wallet.provider.getSigner();
       
-      // Prepare swaps (1inch handles quotes internally)
-      const swaps = selectedTokenInfos.map((token) => {
+      // Filter to only swappable tokens (have liquidity)
+      const swappableTokens = selectedTokenInfos.filter(token => token.hasLiquidity !== false);
+      
+      if (swappableTokens.length === 0) {
+        setError('No swappable tokens selected. Please select tokens that have Uniswap liquidity pools.');
+        return;
+      }
+
+      if (swappableTokens.length < selectedTokenInfos.length) {
+        const nonSwappableCount = selectedTokenInfos.length - swappableTokens.length;
+        console.warn(`${nonSwappableCount} selected tokens don't have liquidity pools and will be skipped`);
+      }
+
+      // Prepare swaps
+      const swaps = swappableTokens.map((token) => {
         const amountIn = ethers.parseUnits(token.balanceFormatted, token.decimals);
         
         return {
@@ -241,20 +282,31 @@ const DustAggregator: React.FC = () => {
       });
 
       // Execute batch swaps
-      const txHashes = await batchSwapService.executeBatchSwaps(
+      const result = await batchSwapService.executeBatchSwaps(
         swaps,
         wallet.address,
         signer,
         slippageTolerance
       );
 
-      if (txHashes.length > 0) {
-        console.log('Batch swap executed successfully:', txHashes);
-        alert(`✅ Batch swap completed! ${txHashes.length} transaction(s) executed.\n\nTransaction hashes:\n${txHashes.join('\n')}`);
+      const { swapTxHashes, approveTxHashes } = result;
+
+      if (swapTxHashes.length > 0) {
+        console.log('Batch swap executed successfully:', swapTxHashes);
+        let message = `✅ Batch swap completed!\n\n`;
+        if (approveTxHashes.length > 0) {
+          message += `Approval transactions: ${approveTxHashes.length}\n${approveTxHashes.join('\n')}\n\n`;
+        }
+        message += `Swap transactions: ${swapTxHashes.length}\n${swapTxHashes.join('\n')}`;
+        alert(message);
         
         // Clear selection and reload tokens
         clearSelection();
         await loadTokens();
+      } else if (approveTxHashes.length > 0) {
+        // Only approvals happened, no swaps
+        setError(`Approvals completed (${approveTxHashes.length} transactions), but swaps failed. Please try converting again.`);
+        console.error('Swaps failed after approvals:', approveTxHashes);
       } else {
         setError('No swaps were executed. Please try again.');
       }
@@ -296,18 +348,34 @@ const DustAggregator: React.FC = () => {
         const tokensWithValue = await priceService.updateTokenValues([customToken]);
         const tokenWithValue = tokensWithValue[0];
         
+        // Check liquidity
+        console.log('Checking liquidity for custom token...');
+        const hasLiquidity = await batchSwapService.checkTokenLiquidity(customTokenAddress);
+        const tokenWithLiquidity = {
+          ...tokenWithValue,
+          hasLiquidity,
+          liquidityChecked: true,
+        };
+        
         // Check if it's a dust token
-        const isDust = dustFilter.isDustToken(tokenWithValue);
+        const isDust = dustFilter.isDustToken(tokenWithLiquidity);
         
         // Update tokens list
-        const updatedTokens = [...tokens, { ...tokenWithValue, isDust }];
+        const updatedTokens = [...tokens, { ...tokenWithLiquidity, isDust }];
         setTokens(updatedTokens);
         
         if (isDust) {
-          setDustTokens([...dustTokens, tokenWithValue]);
+          setDustTokens([...dustTokens, tokenWithLiquidity]);
         }
         
-        console.log('Custom token added:', tokenWithValue);
+        // Show message about liquidity
+        if (!hasLiquidity) {
+          setError(`Token added, but no Uniswap liquidity pool found. This token cannot be swapped.`);
+        } else {
+          setError(null);
+        }
+        
+        console.log('Custom token added:', tokenWithLiquidity);
         setCustomTokenAddress('');
       } else {
         setError('Token not found or has zero balance');
@@ -517,7 +585,9 @@ const DustAggregator: React.FC = () => {
             </div>
 
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {dustTokens.map((token, index) => (
+              {dustTokens
+                .filter(token => token.hasLiquidity !== false) // Only show swappable tokens
+                .map((token, index) => (
                 <div
                   key={index}
                   className={`glass rounded-xl p-4 cursor-pointer transition-all ${
@@ -543,11 +613,39 @@ const DustAggregator: React.FC = () => {
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-100">{parseFloat(token.balanceFormatted).toFixed(6)}</p>
                       <p className="text-xs text-gray-400">${token.valueUSD.toFixed(2)}</p>
+                      {token.hasLiquidity && (
+                        <span className="inline-block mt-1 text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/50">
+                          Swappable
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+            
+            {/* Show tokens without liquidity */}
+            {dustTokens.filter(token => token.hasLiquidity === false).length > 0 && (
+              <div className="mt-4 p-4 glass rounded-xl border border-red-500/30 bg-red-500/10">
+                <h5 className="font-semibold text-red-400 mb-2">⚠️ Tokens Without Liquidity</h5>
+                <p className="text-sm text-gray-300 mb-3">
+                  The following tokens don't have Uniswap liquidity pools and cannot be swapped:
+                </p>
+                <div className="space-y-2">
+                  {dustTokens
+                    .filter(token => token.hasLiquidity === false)
+                    .map((token, index) => (
+                      <div key={index} className="flex items-center justify-between text-sm">
+                        <div>
+                          <span className="font-semibold text-gray-200">{token.symbol || 'UNKNOWN'}</span>
+                          <span className="text-gray-400 ml-2">{token.name || 'Unknown Token'}</span>
+                        </div>
+                        <span className="text-red-400">No liquidity pool</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversion Settings */}
