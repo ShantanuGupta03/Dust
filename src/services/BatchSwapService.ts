@@ -329,31 +329,11 @@ export class BatchSwapService {
         ? WETH_ADDRESS
         : fromToken.address;
       
+      // For ETH swaps, we'll swap to WETH (can be unwrapped later)
+      // For other tokens, use the exact target
       const tokenOut = toToken.tokenAddress === '0x0000000000000000000000000000000000000000'
         ? WETH_ADDRESS
         : toToken.tokenAddress;
-
-      // If swapping to ETH, try USDC first (most liquid), then WETH
-      if (toToken.tokenAddress === '0x0000000000000000000000000000000000000000') {
-        const usdcAddress = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-        // Try USDC first
-        let bestRoute = await this.findBestRoute(tokenIn, usdcAddress, amountIn);
-        if (bestRoute) {
-          const { amountOut, fee, path, isMultiHop } = bestRoute;
-          const slippageBps = Math.floor(slippageTolerance * 100);
-          const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
-          return { amountOut, amountOutMinimum, fee, path, isMultiHop };
-        }
-        
-        // Fallback to WETH
-        bestRoute = await this.findBestRoute(tokenIn, WETH_ADDRESS, amountIn);
-        if (bestRoute) {
-          const { amountOut, fee, path, isMultiHop } = bestRoute;
-          const slippageBps = Math.floor(slippageTolerance * 100);
-          const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
-          return { amountOut, amountOutMinimum, fee, path, isMultiHop };
-        }
-      }
 
       // Find best route (direct or multi-hop)
       const bestRoute = await this.findBestRoute(tokenIn, tokenOut, amountIn);
