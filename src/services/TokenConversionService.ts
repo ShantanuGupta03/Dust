@@ -40,7 +40,8 @@ export class TokenConversionService {
       
       // Calculate minimum amount out with slippage
       const slippageBps = Math.floor(slippageTolerance * 100);
-      const amountOutMinimum = (amountOut * BigInt(10000 - slippageBps)) / BigInt(10000);
+      // amountOutMinimum calculated but not used in simplified version
+      void ((amountOut * BigInt(10000 - slippageBps)) / BigInt(10000));
       
       // Estimate gas (simplified)
       const gasEstimate = this.estimateSwapGas(fromToken.address, toToken.tokenAddress);
@@ -127,7 +128,7 @@ export class TokenConversionService {
   }
 
   // Estimate gas cost for swap
-  private estimateSwapGas(fromToken: string, toToken: string): string {
+  private estimateSwapGas(_fromToken: string, _toToken: string): string {
     // Simplified gas estimation
     const baseGas = 150000; // Base gas for swap
     const gasPrice = 0.000000001; // 1 gwei
@@ -140,10 +141,10 @@ export class TokenConversionService {
 
   // Calculate price impact (simplified)
   private calculatePriceImpact(
-    fromToken: TokenInfo,
-    toToken: ConversionOption,
-    amountIn: bigint,
-    amountOut: bigint
+    _fromToken: TokenInfo,
+    _toToken: ConversionOption,
+    _amountIn: bigint,
+    _amountOut: bigint
   ): number {
     // This is a simplified calculation
     // In reality, you'd need to get the current market price and calculate impact

@@ -30,11 +30,8 @@ export class DustTokenAggregator {
       // Update token values with current prices
       const tokensWithValues = await this.priceService.updateTokenValues(tokens);
 
-      // Get ETH price for dust calculation
-      const ethPrice = await this.priceService.getETHPrice();
-
       // Filter dust tokens
-      const dustTokens = this.dustFilter.filterDustTokens(tokensWithValues, ethPrice);
+      const dustTokens = this.dustFilter.filterDustTokens(tokensWithValues);
 
       // Calculate totals
       const totalTokens = tokensWithValues.length;
