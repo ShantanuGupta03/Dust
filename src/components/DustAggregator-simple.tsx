@@ -317,9 +317,8 @@ const DustAggregator: React.FC = () => {
             token,
             selectedToToken,
             amountIn,
-            wallet.address,
-            signer,
-            slippageTolerance
+            slippageTolerance,
+            signer
           );
 
           // Update status to success
