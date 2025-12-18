@@ -86,7 +86,18 @@ const DustAggregator: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [dustTokens, setDustTokens] = useState<TokenInfo[]>([]);
-  const [thresholds] = useState<DustThresholds>(DEFAULT_DUST_THRESHOLDS);
+  // Load thresholds from localStorage or use default
+  const [thresholds, setThresholds] = useState<DustThresholds>(() => {
+    const saved = localStorage.getItem('dustThresholds');
+    if (saved) {
+      try {
+        return { ...DEFAULT_DUST_THRESHOLDS, ...JSON.parse(saved) };
+      } catch {
+        return DEFAULT_DUST_THRESHOLDS;
+      }
+    }
+    return { ...DEFAULT_DUST_THRESHOLDS, usd: 10 }; // Default to $10
+  });
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set());
   const [selectedToToken, setSelectedToToken] = useState(CONVERSION_OPTIONS[0]);
@@ -107,13 +118,20 @@ const DustAggregator: React.FC = () => {
   const [tokenSearchQuery, setTokenSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'value' | 'name' | 'symbol'>('value');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [showDustSettings, setShowDustSettings] = useState(false);
 
   const { theme, toggleTheme } = useTheme();
   const tokenDiscovery = new ComprehensiveTokenDiscovery();
-  const dustFilter = new DustTokenFilter({ ...thresholds, usd: 10 });
   const priceService = new PriceService();
   const batchSwapService = new BatchSwapService();
   const swapHistoryService = new SwapHistoryService();
+  
+  // Create dust filter - will be recreated when thresholds change
+  const dustFilter = React.useMemo(() => {
+    const filter = new DustTokenFilter(thresholds);
+    filter.setUSDThreshold(thresholds.usd);
+    return filter;
+  }, [thresholds]);
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -745,6 +763,85 @@ const DustAggregator: React.FC = () => {
         />
       )}
 
+      {/* Dust Threshold Settings Modal */}
+      {showDustSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="dust-card max-w-md w-full p-6 animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-dust-text-primary">Dust Threshold Settings</h2>
+              <button
+                onClick={() => setShowDustSettings(false)}
+                className="text-dust-text-muted hover:text-dust-text-primary transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-dust-text-primary mb-2">
+                  Maximum USD Value for Dust Tokens
+                </label>
+                <p className="text-xs text-dust-text-secondary mb-3">
+                  Tokens with a value less than or equal to this amount will be considered "dust"
+                </p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-dust-text-secondary">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={thresholds.usd}
+                    onChange={(e) => {
+                      const newValue = parseFloat(e.target.value) || 0;
+                      const newThresholds = { ...thresholds, usd: newValue };
+                      setThresholds(newThresholds);
+                      localStorage.setItem('dustThresholds', JSON.stringify(newThresholds));
+                    }}
+                    className="dust-input w-full pl-8 pr-4"
+                    placeholder="10.00"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-dust-border-strong">
+                <div className="flex items-center gap-2 text-sm text-dust-text-secondary">
+                  <svg className="w-5 h-5 text-dust-sapphire" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p>Changes will be saved automatically and applied to future scans.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setThresholds({ ...DEFAULT_DUST_THRESHOLDS, usd: 10 });
+                    localStorage.setItem('dustThresholds', JSON.stringify({ ...DEFAULT_DUST_THRESHOLDS, usd: 10 }));
+                    loadTokens(); // Reload to apply new threshold
+                  }}
+                  className="flex-1 dust-btn-ghost"
+                >
+                  Reset to Default ($10)
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDustSettings(false);
+                    loadTokens(); // Reload to apply new threshold
+                  }}
+                  className="flex-1 dust-btn-primary"
+                >
+                  Apply & Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tab Content */}
       {activeTab === 'history' ? (
         <HistoryAnalytics walletAddress={wallet.address} />
@@ -789,7 +886,10 @@ const DustAggregator: React.FC = () => {
           </div>
         </div>
 
-        <div className="dust-stat-card">
+        <button
+          onClick={() => setShowDustSettings(true)}
+          className="dust-stat-card cursor-pointer hover:scale-[1.02] transition-transform"
+        >
           <div className="flex items-start justify-between">
             <div>
               <p className="text-dust-secondary text-sm mb-2">Dust Tokens</p>
@@ -799,8 +899,14 @@ const DustAggregator: React.FC = () => {
               <SparklesIcon />
             </div>
           </div>
-          <p className="text-dust-muted text-xs mt-3">Value ≤ $10</p>
-        </div>
+          <div className="flex items-center justify-between mt-3">
+            <p className="text-dust-muted text-xs">Value ≤ ${thresholds.usd.toFixed(2)}</p>
+            <svg className="w-4 h-4 text-dust-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+        </button>
 
         <div className="dust-stat-card">
           <div className="flex items-start justify-between">
@@ -1008,6 +1114,19 @@ const DustAggregator: React.FC = () => {
                             )}
                           </div>
                           <p className="text-sm text-dust-muted truncate">{token.name || 'Unknown Token'}</p>
+                          <a
+                            href={`https://basescan.org/address/${token.address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-dust-sapphire hover:text-dust-sapphire/80 transition-colors truncate block mt-0.5"
+                            title={token.address}
+                          >
+                            {token.address.slice(0, 6)}...{token.address.slice(-4)}
+                            <svg className="w-3 h-3 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0 ml-3">
@@ -1096,6 +1215,19 @@ const DustAggregator: React.FC = () => {
                       <div>
                           <p className="font-semibold text-dust-primary">{token.symbol}</p>
                           <p className="text-xs text-dust-muted">{token.name}</p>
+                          <a
+                            href={`https://basescan.org/address/${token.address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-dust-sapphire hover:text-dust-sapphire/80 transition-colors inline-block mt-0.5"
+                            title={token.address}
+                          >
+                            {token.address.slice(0, 6)}...{token.address.slice(-4)}
+                            <svg className="w-3 h-3 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
                       </div>
                     </div>
                       <div className="flex items-center gap-4">
