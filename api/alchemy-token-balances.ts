@@ -62,23 +62,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const metadataConcurrency = 12;
 
     // 1) Fetch ALL ERC20 balances (paged)
+    // Note: alchemy_getTokenBalances is an Alchemy-specific extension method
+    // It's not in the standard Ethereum RPC spec but is available on Alchemy
     const allBalances: TokenBalance[] = [];
     let pageKey: string | undefined = undefined;
 
-    for (let page = 0; page < maxPages; page++) {
-      const params = pageKey
-        ? [address, "erc20", { pageKey }]
-        : [address, "erc20"];
+    try {
+      for (let page = 0; page < maxPages; page++) {
+        const params = pageKey
+          ? [address, "erc20", { pageKey }]
+          : [address, "erc20"];
 
-      const result = await alchemyRpc<BalancesResult>(
-        rpcUrl,
-        "alchemy_getTokenBalances",
-        params
-      );
+        const result = await alchemyRpc<BalancesResult>(
+          rpcUrl,
+          "alchemy_getTokenBalances",
+          params
+        );
 
-      allBalances.push(...(result.tokenBalances || []));
-      pageKey = result.pageKey;
-      if (!pageKey) break;
+        allBalances.push(...(result.tokenBalances || []));
+        pageKey = result.pageKey;
+        if (!pageKey) break;
+      }
+    } catch (error: any) {
+      // If alchemy_getTokenBalances fails, return empty array
+      // This could happen if the method isn't available or API key is invalid
+      console.error("Error fetching token balances from Alchemy:", error);
+      return res.status(200).json({
+        address,
+        tokenCount: 0,
+        tokens: [],
+        nextPageKey: null,
+        error: "alchemy_getTokenBalances_failed",
+        message: error?.message || "Failed to fetch token balances",
+      });
     }
 
     // Filter to non-zero balances and valid addresses
@@ -107,12 +123,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           let meta: MetadataResult = {};
           try {
+            // Note: alchemy_getTokenMetadata is an Alchemy-specific extension method
             meta = await alchemyRpc<MetadataResult>(
               rpcUrl,
               "alchemy_getTokenMetadata",
               [tokenAddr]
             );
-          } catch {
+          } catch (error) {
+            // If Alchemy metadata fails, we'll use defaults (UNKNOWN token)
+            // This is fine - the token will still be discovered with balance
+            console.warn(`Failed to get metadata for ${tokenAddr}:`, error);
             meta = {};
           }
 
