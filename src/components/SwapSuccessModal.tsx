@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
+import confetti from 'canvas-confetti';
 
 interface SwapSuccessModalProps {
   isOpen: boolean;
@@ -28,6 +29,65 @@ const SwapSuccessModal: React.FC<SwapSuccessModalProps> = ({
   onScanMore,
   onDisconnect,
 }) => {
+  const confettiIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      // Stop confetti when modal closes
+      if (confettiIntervalRef.current) {
+        clearInterval(confettiIntervalRef.current);
+        confettiIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Start continuous confetti animation
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+    function randomInRange(min: number, max: number) {
+      return Math.random() * (max - min) + min;
+    }
+
+    // Continuous confetti bursts
+    confettiIntervalRef.current = setInterval(() => {
+      const particleCount = 30;
+      
+      // Launch confetti from left
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+        colors: ['#FFD700', '#FFA500', '#FF6347', '#32CD32', '#1E90FF', '#9370DB']
+      });
+      
+      // Launch confetti from right
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+        colors: ['#FFD700', '#FFA500', '#FF6347', '#32CD32', '#1E90FF', '#9370DB']
+      });
+    }, 300);
+
+    // Initial burst
+    setTimeout(() => {
+      confetti({
+        ...defaults,
+        particleCount: 100,
+        origin: { x: 0.5, y: 0.5 },
+        colors: ['#FFD700', '#FFA500', '#FF6347', '#32CD32', '#1E90FF', '#9370DB']
+      });
+    }, 100);
+
+    // Cleanup on unmount
+    return () => {
+      if (confettiIntervalRef.current) {
+        clearInterval(confettiIntervalRef.current);
+        confettiIntervalRef.current = null;
+      }
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const formatUSD = (value: number) => {
@@ -66,9 +126,17 @@ const SwapSuccessModal: React.FC<SwapSuccessModalProps> = ({
         {/* Amount Received Card */}
         <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/10 border border-emerald-500/20 rounded-xl p-6 mb-6">
           <p className="text-sm text-dust-text-secondary mb-2">You received</p>
-          <p className="text-3xl font-bold text-dust-text-primary mb-1">
-            {amountReceived} {tokenSymbol}
-          </p>
+          <div className="break-words">
+            <p className="text-2xl sm:text-3xl font-bold text-dust-text-primary mb-1">
+              {parseFloat(amountReceived).toLocaleString('en-US', {
+                maximumFractionDigits: 8,
+                minimumFractionDigits: 0
+              })}
+            </p>
+            <p className="text-xl sm:text-2xl font-bold text-dust-text-primary">
+              {tokenSymbol}
+            </p>
+          </div>
           <p className="text-sm text-dust-text-muted">
             ≈ {formatUSD(usdValue)} USD
           </p>
