@@ -57,6 +57,43 @@
   --radius: 1rem;
 }
 
+/* Light mode variables */
+.light {
+  /* Core palette - Light theme */
+  --dust-black: #ffffff;
+  --dust-dark: #f8f9fa;
+  --dust-surface: #ffffff;
+  --dust-elevated: #f1f3f5;
+  --dust-border: rgba(59, 130, 246, 0.15);
+  --dust-border-strong: rgba(59, 130, 246, 0.3);
+  
+  /* Text */
+  --dust-text-primary: #1a1a1a;
+  --dust-text-secondary: rgba(26, 26, 26, 0.7);
+  --dust-text-muted: rgba(26, 26, 26, 0.5);
+  
+  /* shadcn/ui theme vars - light mode */
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 221 83% 53%;
+}
+
 @layer base {
   * {
     @apply border-border;

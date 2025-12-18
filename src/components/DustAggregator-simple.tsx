@@ -4,7 +4,11 @@ import { ComprehensiveTokenDiscovery } from '../services/ComprehensiveTokenDisco
 import { DustTokenFilter } from '../services/DustTokenFilter';
 import { PriceService } from '../services/PriceService';
 import { BatchSwapService } from '../services/BatchSwapService';
+import { SwapHistoryService } from '../services/SwapHistoryService';
 import { TokenInfo, DustThresholds, DEFAULT_DUST_THRESHOLDS, CONVERSION_OPTIONS } from '../types/token';
+import { useTheme } from '../contexts/ThemeContext';
+import SwapSuccessModal from './SwapSuccessModal';
+import HistoryAnalytics from './HistoryAnalytics';
 
 // Extend Window interface to include ethereum
 declare global {
@@ -90,11 +94,21 @@ const DustAggregator: React.FC = () => {
   const [slippageTolerance, setSlippageTolerance] = useState(1.0); // 1% default
   const [swapStatuses, setSwapStatuses] = useState<SwapStatus[]>([]);
   const [checkingLiquidity, setCheckingLiquidity] = useState(false);
+  const [activeTab, setActiveTab] = useState<'swap' | 'history'>('swap');
+  const [successModal, setSuccessModal] = useState<{
+    isOpen: boolean;
+    amountReceived: string;
+    tokenSymbol: string;
+    usdValue: number;
+    txHash: string;
+  } | null>(null);
 
+  const { theme, toggleTheme } = useTheme();
   const tokenDiscovery = new ComprehensiveTokenDiscovery();
   const dustFilter = new DustTokenFilter({ ...thresholds, usd: 10 });
   const priceService = new PriceService();
   const batchSwapService = new BatchSwapService();
+  const swapHistoryService = new SwapHistoryService();
 
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -312,6 +326,15 @@ const DustAggregator: React.FC = () => {
               : s
           ));
 
+          // Get quote first to know the output amount
+          const quote = await batchSwapService.getSwapQuote(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
+          const buyAmount = quote.buyAmount || '0';
+          const buyAmountFormatted = ethers.formatUnits(buyAmount, selectedToToken.decimals);
+          
+          // Estimate USD value (using token's USD value ratio)
+          const tokenValueRatio = token.valueUSD / parseFloat(token.balanceFormatted);
+          const estimatedUSDValue = parseFloat(buyAmountFormatted) * tokenValueRatio;
+
           // Execute swap
           const txHash = await batchSwapService.executeSwap(
             token,
@@ -329,6 +352,22 @@ const DustAggregator: React.FC = () => {
           ));
           successfulSwaps.push(token.symbol);
 
+          // Track in history
+          swapHistoryService.addSwap({
+            fromTokens: [{
+              symbol: token.symbol,
+              amount: token.balanceFormatted,
+              valueUSD: token.valueUSD,
+            }],
+            toToken: {
+              symbol: selectedToToken.symbol,
+              amount: buyAmountFormatted,
+              valueUSD: estimatedUSDValue,
+            },
+            txHash,
+            totalValueUSD: token.valueUSD,
+          });
+
           // Small delay between swaps
           if (i < selectedTokenInfos.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -344,13 +383,45 @@ const DustAggregator: React.FC = () => {
         }
       }
 
-      // Show summary
+      // Show success modal and summary
       if (successfulSwaps.length > 0) {
-        const message = `✅ Successfully swapped ${successfulSwaps.length} token(s): ${successfulSwaps.join(', ')}`;
+        // Calculate total received amount (aggregate all successful swaps)
+        let totalReceived = 0n;
+        let totalUSDValue = 0;
+        
+        for (const token of selectedTokenInfos) {
+          if (successfulSwaps.includes(token.symbol)) {
+            const amountIn = ethers.parseUnits(token.balanceFormatted, token.decimals);
+            try {
+              const quote = await batchSwapService.getSwapQuote(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
+              const buyAmount = BigInt(quote.buyAmount || '0');
+              totalReceived += buyAmount;
+              
+              const tokenValueRatio = token.valueUSD / parseFloat(token.balanceFormatted);
+              const buyAmountFormatted = parseFloat(ethers.formatUnits(buyAmount, selectedToToken.decimals));
+              totalUSDValue += buyAmountFormatted * tokenValueRatio;
+            } catch {
+              // Skip if quote fails
+            }
+          }
+        }
+        
+        const totalReceivedFormatted = ethers.formatUnits(totalReceived, selectedToToken.decimals);
+        
+        // Show success modal
+        const lastSuccessfulSwap = swapStatuses.find(s => s.status === 'success' && s.txHash);
+        if (lastSuccessfulSwap) {
+          setSuccessModal({
+            isOpen: true,
+            amountReceived: totalReceivedFormatted,
+            tokenSymbol: selectedToToken.symbol,
+            usdValue: totalUSDValue,
+            txHash: lastSuccessfulSwap.txHash!,
+          });
+        }
+        
         if (failedSwaps.length > 0) {
-          setError(`${message}\n\n⚠️ Failed to swap: ${failedSwaps.join(', ')}`);
-        } else {
-          alert(message);
+          setError(`⚠️ Failed to swap: ${failedSwaps.join(', ')}`);
         }
         
         // Refresh tokens after successful swaps
@@ -518,14 +589,82 @@ const DustAggregator: React.FC = () => {
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="dust-btn-ghost p-2 rounded-lg hover:bg-dust-elevated transition-colors"
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={disconnectWallet}
+              className="dust-btn-ghost text-sm"
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="dust-card p-2 opacity-0 animate-slide-up" style={{ animationDelay: '0.15s', animationFillMode: 'forwards' }}>
+        <div className="flex gap-2">
           <button
-            onClick={disconnectWallet}
-            className="dust-btn-ghost text-sm"
+            onClick={() => setActiveTab('swap')}
+            className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+              activeTab === 'swap'
+                ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg'
+                : 'text-dust-secondary hover:text-dust-primary hover:bg-dust-elevated'
+            }`}
           >
-            Disconnect
+            Swap Tokens
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+              activeTab === 'history'
+                ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg'
+                : 'text-dust-secondary hover:text-dust-primary hover:bg-dust-elevated'
+            }`}
+          >
+            History & Analytics
           </button>
         </div>
       </div>
+
+      {/* Success Modal */}
+      {successModal && (
+        <SwapSuccessModal
+          isOpen={successModal.isOpen}
+          onClose={() => setSuccessModal(null)}
+          amountReceived={successModal.amountReceived}
+          tokenSymbol={successModal.tokenSymbol}
+          usdValue={successModal.usdValue}
+          txHash={successModal.txHash}
+          onScanMore={() => {
+            setSuccessModal(null);
+            setActiveTab('swap');
+            loadTokens();
+          }}
+          onDisconnect={disconnectWallet}
+        />
+      )}
+
+      {/* Tab Content */}
+      {activeTab === 'history' ? (
+        <HistoryAnalytics walletAddress={wallet.address} />
+      ) : (
+        <>
 
       {/* Error Display */}
       {error && (
@@ -872,6 +1011,8 @@ const DustAggregator: React.FC = () => {
             </>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );

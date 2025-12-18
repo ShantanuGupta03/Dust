@@ -156,6 +156,7 @@ export class BatchSwapService {
         tokenAddress: toTokenAddress,
         symbol: '',
         name: '',
+        decimals: 18, // Default to 18, will be overridden by actual token
       };
 
       const estimate = await this.getPriceEstimate(fromToken, toToken, amountIn);
