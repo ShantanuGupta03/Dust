@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
+import confetti from 'canvas-confetti';
 import { ComprehensiveTokenDiscovery } from '../services/ComprehensiveTokenDiscovery';
 import { DustTokenFilter } from '../services/DustTokenFilter';
 import { PriceService } from '../services/PriceService';
@@ -7,6 +8,7 @@ import { BatchSwapService } from '../services/BatchSwapService';
 import { SwapHistoryService } from '../services/SwapHistoryService';
 import { TokenInfo, DustThresholds, DEFAULT_DUST_THRESHOLDS, CONVERSION_OPTIONS } from '../types/token';
 import { useTheme } from '../contexts/ThemeContext';
+import { parseErrorMessage } from '../utils/errorParser';
 import SwapSuccessModal from './SwapSuccessModal';
 import HistoryAnalytics from './HistoryAnalytics';
 
@@ -141,7 +143,7 @@ const DustAggregator: React.FC = () => {
       console.log('Wallet connected:', address);
     } catch (err) {
       console.error('Error connecting wallet:', err);
-      setError('Failed to connect wallet. Please try again.');
+      setError(parseErrorMessage(err) || 'Failed to connect wallet. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -189,7 +191,7 @@ const DustAggregator: React.FC = () => {
       console.log(`✅ Found ${tokensWithDustFlag.length} tokens, ${dustTokensList.length} dust tokens`);
     } catch (err) {
       console.error('Error loading tokens:', err);
-      setError(`Failed to load tokens: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setError(`Failed to load tokens: ${parseErrorMessage(err)}`);
     } finally {
       setLoadingTokens(false);
     }
@@ -374,9 +376,10 @@ const DustAggregator: React.FC = () => {
           }
         } catch (error) {
           console.error(`Error swapping ${token.symbol}:`, error);
+          const errorMessage = parseErrorMessage(error);
           setSwapStatuses(prev => prev.map(s => 
             s.tokenAddress === token.address 
-              ? { ...s, status: 'failed', error: error instanceof Error ? error.message : 'Unknown error' }
+              ? { ...s, status: 'failed', error: errorMessage }
               : s
           ));
           failedSwaps.push(token.symbol);
@@ -408,17 +411,60 @@ const DustAggregator: React.FC = () => {
         
         const totalReceivedFormatted = ethers.formatUnits(totalReceived, selectedToToken.decimals);
         
-        // Show success modal
-        const lastSuccessfulSwap = swapStatuses.find(s => s.status === 'success' && s.txHash);
-        if (lastSuccessfulSwap) {
-          setSuccessModal({
-            isOpen: true,
-            amountReceived: totalReceivedFormatted,
-            tokenSymbol: selectedToToken.symbol,
-            usdValue: totalUSDValue,
-            txHash: lastSuccessfulSwap.txHash!,
-          });
-        }
+          // Show success modal and trigger confetti
+          const lastSuccessfulSwap = swapStatuses.find(s => s.status === 'success' && s.txHash);
+          if (lastSuccessfulSwap) {
+            // Trigger confetti animation
+            const duration = 3000;
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+            function randomInRange(min: number, max: number) {
+              return Math.random() * (max - min) + min;
+            }
+
+            const interval: NodeJS.Timeout = setInterval(function() {
+              const timeLeft = animationEnd - Date.now();
+
+              if (timeLeft <= 0) {
+                return clearInterval(interval);
+              }
+
+              const particleCount = 50 * (timeLeft / duration);
+              
+              // Launch confetti from left
+              confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+              });
+              
+              // Launch confetti from right
+              confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+              });
+            }, 250);
+
+            // Final burst
+            setTimeout(() => {
+              confetti({
+                ...defaults,
+                particleCount: 100,
+                origin: { x: 0.5, y: 0.5 },
+                colors: ['#FFD700', '#FFA500', '#FF6347', '#32CD32', '#1E90FF', '#9370DB']
+              });
+            }, 500);
+
+            setSuccessModal({
+              isOpen: true,
+              amountReceived: totalReceivedFormatted,
+              tokenSymbol: selectedToToken.symbol,
+              usdValue: totalUSDValue,
+              txHash: lastSuccessfulSwap.txHash!,
+            });
+          }
         
         if (failedSwaps.length > 0) {
           setError(`⚠️ Failed to swap: ${failedSwaps.join(', ')}`);
@@ -431,7 +477,7 @@ const DustAggregator: React.FC = () => {
       }
     } catch (err) {
       console.error('Error executing conversion:', err);
-      setError(`Failed to execute conversion: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setError(parseErrorMessage(err));
     } finally {
       setConverting(false);
     }
@@ -480,7 +526,7 @@ const DustAggregator: React.FC = () => {
         setError('Token not found or has zero balance');
       }
     } catch (err) {
-      setError('Failed to add custom token. Please check the address.');
+      setError(parseErrorMessage(err) || 'Failed to add custom token. Please check the address.');
     } finally {
       setAddingCustomToken(false);
     }
@@ -539,8 +585,24 @@ const DustAggregator: React.FC = () => {
           </p>
           
           {error && (
-            <div className="mb-6 p-4 rounded-xl bg-[var(--dust-ruby)]/10 border border-[var(--dust-ruby)]/30">
-              <p className="text-[var(--dust-ruby)] text-sm">{error}</p>
+            <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-[var(--dust-ruby)]/10 to-[var(--dust-ruby)]/5 border border-[var(--dust-ruby)]/30 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--dust-ruby)]/20 flex items-center justify-center">
+                  <AlertIcon />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[var(--dust-ruby)] text-sm leading-relaxed break-words">{error}</p>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="flex-shrink-0 text-[var(--dust-ruby)]/60 hover:text-[var(--dust-ruby)] transition-colors p-1 rounded hover:bg-[var(--dust-ruby)]/10"
+                  aria-label="Dismiss error"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
 
@@ -593,18 +655,22 @@ const DustAggregator: React.FC = () => {
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
-              className="dust-btn-ghost p-2 rounded-lg hover:bg-dust-elevated transition-colors"
+              className="relative w-12 h-6 rounded-full bg-dust-elevated border border-dust-border transition-all duration-300 hover:border-dust-border-strong focus:outline-none focus:ring-2 focus:ring-dust-gold-500/50"
               aria-label="Toggle theme"
             >
-              {theme === 'dark' ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              )}
+              <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-gradient-to-br from-dust-gold-400 to-dust-gold-600 transition-transform duration-300 flex items-center justify-center shadow-lg ${
+                theme === 'light' ? 'translate-x-6' : 'translate-x-0'
+              }`}>
+                {theme === 'dark' ? (
+                  <svg className="w-3 h-3 text-dust-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3 text-dust-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                )}
+              </div>
             </button>
             <button
               onClick={disconnectWallet}
@@ -668,10 +734,24 @@ const DustAggregator: React.FC = () => {
 
       {/* Error Display */}
       {error && (
-        <div className="dust-card p-4 bg-[var(--dust-ruby)]/10 border-[var(--dust-ruby)]/30">
+        <div className="dust-card p-4 bg-gradient-to-r from-[var(--dust-ruby)]/10 to-[var(--dust-ruby)]/5 border border-[var(--dust-ruby)]/30 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="flex items-start gap-3">
-            <AlertIcon />
-            <p className="text-[var(--dust-ruby)] whitespace-pre-line">{error}</p>
+            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[var(--dust-ruby)]/20 flex items-center justify-center">
+              <AlertIcon />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-[var(--dust-ruby)] font-semibold mb-1">Error</h4>
+              <p className="text-[var(--dust-ruby)] text-sm leading-relaxed break-words">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="flex-shrink-0 text-[var(--dust-ruby)]/60 hover:text-[var(--dust-ruby)] transition-colors p-1 rounded hover:bg-[var(--dust-ruby)]/10"
+              aria-label="Dismiss error"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}
@@ -913,7 +993,14 @@ const DustAggregator: React.FC = () => {
                       </div>
                     </div>
                     {swapStatus?.error && (
-                      <p className="text-xs text-[var(--dust-ruby)] mt-2 pl-9">{swapStatus.error}</p>
+                      <div className="mt-2 pl-9 pr-2">
+                        <div className="flex items-start gap-2 p-2 rounded-lg bg-[var(--dust-ruby)]/10 border border-[var(--dust-ruby)]/20">
+                          <svg className="w-4 h-4 text-[var(--dust-ruby)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <p className="text-xs text-[var(--dust-ruby)] leading-relaxed break-words">{swapStatus.error}</p>
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
