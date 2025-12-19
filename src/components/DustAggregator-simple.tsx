@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ethers } from 'ethers';
 import confetti from 'canvas-confetti';
 import { ComprehensiveTokenDiscovery } from '../services/ComprehensiveTokenDiscovery';
@@ -182,6 +182,37 @@ const DustAggregator: React.FC = () => {
     setSwapStatuses([]);
   };
 
+  // Re-filter existing tokens with current threshold (without re-scanning)
+  const refilterTokens = useCallback(() => {
+    if (tokens.length === 0) return;
+    
+    // Filter dust tokens with current threshold
+    const dustTokensList = dustFilter.filterDustTokens(tokens);
+    
+    // Mark tokens as dust
+    const tokensWithDustFlag = tokens.map(token => ({
+      ...token,
+      isDust: dustTokensList.some(dt => dt.address === token.address),
+    }));
+    
+    setTokens(tokensWithDustFlag);
+    setDustTokens(dustTokensList);
+    
+    // Clear selection if selected tokens are no longer dust
+    const dustAddresses = new Set(dustTokensList.map(t => t.address));
+    setSelectedTokens(prev => {
+      const filtered = new Set<string>();
+      prev.forEach(addr => {
+        if (dustAddresses.has(addr)) {
+          filtered.add(addr);
+        }
+      });
+      return filtered;
+    });
+    
+    console.log(`✅ Re-filtered: ${dustTokensList.length} dust tokens (threshold: $${thresholds.usd})`);
+  }, [tokens, dustFilter, thresholds.usd]);
+
   const loadTokens = async () => {
     if (!wallet.address) return;
 
@@ -265,6 +296,13 @@ const DustAggregator: React.FC = () => {
       loadTokens();
     }
   }, [wallet.isConnected, wallet.address]);
+
+  // Re-filter tokens when threshold changes (if tokens are already loaded)
+  useEffect(() => {
+    if (tokens.length > 0) {
+      refilterTokens();
+    }
+  }, [thresholds.usd, refilterTokens]);
 
   const toggleTokenSelection = (tokenAddress: string) => {
     const newSelection = new Set(selectedTokens);
@@ -800,6 +838,8 @@ const DustAggregator: React.FC = () => {
                       const newThresholds = { ...thresholds, usd: newValue };
                       setThresholds(newThresholds);
                       localStorage.setItem('dustThresholds', JSON.stringify(newThresholds));
+                      // Re-filter existing tokens immediately
+                      setTimeout(() => refilterTokens(), 100);
                     }}
                     className="dust-input w-full pl-8 pr-4"
                     placeholder="10.00"
@@ -819,9 +859,10 @@ const DustAggregator: React.FC = () => {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => {
-                    setThresholds({ ...DEFAULT_DUST_THRESHOLDS, usd: 10 });
-                    localStorage.setItem('dustThresholds', JSON.stringify({ ...DEFAULT_DUST_THRESHOLDS, usd: 10 }));
-                    loadTokens(); // Reload to apply new threshold
+                    const defaultThresholds = { ...DEFAULT_DUST_THRESHOLDS, usd: 10 };
+                    setThresholds(defaultThresholds);
+                    localStorage.setItem('dustThresholds', JSON.stringify(defaultThresholds));
+                    setTimeout(() => refilterTokens(), 100);
                   }}
                   className="flex-1 dust-btn-ghost"
                 >
@@ -830,11 +871,10 @@ const DustAggregator: React.FC = () => {
                 <button
                   onClick={() => {
                     setShowDustSettings(false);
-                    loadTokens(); // Reload to apply new threshold
                   }}
                   className="flex-1 dust-btn-primary"
                 >
-                  Apply & Close
+                  Close
                 </button>
               </div>
             </div>
@@ -1165,29 +1205,97 @@ const DustAggregator: React.FC = () => {
       {/* Batch Swap Section */}
       {dustTokens.length > 0 && (
         <div className="dust-card p-6 border-[var(--dust-gold-500)]/30 opacity-0 animate-slide-up" style={{ animationDelay: '0.5s', animationFillMode: 'forwards' }}>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center dust-glow-sm">
-              <SwapIcon />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center dust-glow-sm">
+                <SwapIcon />
+              </div>
+              <div>
+                <h3 className="dust-heading-md dust-text-gradient">Sweep Dust Tokens</h3>
+                <p className="text-dust-secondary text-sm">Convert {dustTokens.length} dust token{dustTokens.length !== 1 ? 's' : ''} to {selectedToToken.symbol}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="dust-heading-md dust-text-gradient">Batch Swap</h3>
-              <p className="text-dust-secondary text-sm">Convert dust tokens via 0x DEX aggregator</p>
-            </div>
+            {selectedTokens.size > 0 && (
+              <div className="text-right">
+                <p className="text-xs text-dust-secondary mb-1">Selected</p>
+                <p className="text-lg font-bold text-dust-gold-400">
+                  {selectedTokens.size} / {dustTokens.length}
+                </p>
+                <p className="text-xs text-dust-muted">
+                  ${dustTokens
+                    .filter(t => selectedTokens.has(t.address))
+                    .reduce((sum, t) => sum + t.valueUSD, 0)
+                    .toFixed(2)}
+                </p>
+              </div>
+            )}
           </div>
+          
+          {/* Quick Actions Bar */}
+          {selectedTokens.size === 0 && (
+            <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-[var(--dust-gold-500)]/10 to-[var(--dust-ember)]/10 border border-[var(--dust-gold-500)]/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-dust-text-primary mb-1">Ready to sweep?</p>
+                  <p className="text-sm text-dust-text-secondary">Select tokens below or click "Select All" to get started</p>
+                </div>
+                <button
+                  onClick={selectAllDustTokens}
+                  className="dust-btn-primary px-4 py-2 text-sm"
+                >
+                  Select All {dustTokens.length}
+                </button>
+              </div>
+            </div>
+          )}
           
           {/* Token Selection */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="font-semibold text-dust-primary">Select Tokens</h4>
+              <h4 className="font-semibold text-dust-primary">
+                Select Tokens to Swap
+                {selectedTokens.size > 0 && (
+                  <span className="ml-2 text-sm font-normal text-dust-text-secondary">
+                    ({selectedTokens.size} selected)
+                  </span>
+                )}
+              </h4>
               <div className="flex gap-2">
-                <button onClick={selectAllDustTokens} className="dust-btn-ghost text-sm">
-                  Select All
-                </button>
-                <button onClick={clearSelection} className="dust-btn-ghost text-sm">
-                  Clear
-                </button>
+                {selectedTokens.size < dustTokens.length && (
+                  <button 
+                    onClick={selectAllDustTokens} 
+                    className="dust-btn-ghost text-sm px-3 py-1.5"
+                    title={`Select all ${dustTokens.length} dust tokens`}
+                  >
+                    Select All
+                  </button>
+                )}
+                {selectedTokens.size > 0 && (
+                  <button 
+                    onClick={clearSelection} 
+                    className="dust-btn-ghost text-sm px-3 py-1.5"
+                  >
+                    Clear ({selectedTokens.size})
+                  </button>
+                )}
               </div>
             </div>
+            
+            {/* Selection Progress Bar */}
+            {dustTokens.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-xs text-dust-text-secondary mb-2">
+                  <span>Selection Progress</span>
+                  <span>{selectedTokens.size} / {dustTokens.length}</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-dust-dark overflow-hidden">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-[var(--dust-gold-500)] to-[var(--dust-ember)] transition-all duration-500"
+                    style={{ width: `${(selectedTokens.size / dustTokens.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
               {dustTokens.map((token) => {
@@ -1305,10 +1413,31 @@ const DustAggregator: React.FC = () => {
               </div>
             </div>
 
-              {/* Info Box */}
-              <div className="p-4 rounded-xl bg-[var(--dust-gold-500)]/10 border border-[var(--dust-gold-500)]/20 mb-6">
-                <p className="text-sm text-dust-secondary">
-                  <span className="text-[var(--dust-gold-400)] font-semibold">Note:</span> Swaps are executed via 0x DEX aggregator which finds the best prices across multiple DEXs. Some tokens may not have liquidity.
+              {/* Summary Card */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[var(--dust-gold-500)]/10 to-[var(--dust-ember)]/10 border border-[var(--dust-gold-500)]/20 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-dust-text-primary">Swap Summary</p>
+                  <p className="text-xs text-dust-text-secondary">
+                    {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} selected
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-dust-text-secondary mb-1">Total Value</p>
+                    <p className="font-semibold text-dust-text-primary">
+                      ${dustTokens
+                        .filter(t => selectedTokens.has(t.address))
+                        .reduce((sum, t) => sum + t.valueUSD, 0)
+                        .toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-dust-text-secondary mb-1">Converting To</p>
+                    <p className="font-semibold text-dust-text-primary">{selectedToToken.symbol}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-dust-text-secondary mt-3 pt-3 border-t border-[var(--dust-gold-500)]/20">
+                  <span className="text-[var(--dust-gold-400)] font-semibold">ℹ️</span> Swaps use 0x DEX aggregator for best prices. Some tokens may lack liquidity.
                 </p>
               </div>
 
@@ -1331,19 +1460,20 @@ const DustAggregator: React.FC = () => {
               <button
                 onClick={executeConversion}
                   disabled={converting || selectedTokens.size === 0}
-                  className="dust-btn-primary w-full py-4 text-lg disabled:opacity-50"
+                  className="dust-btn-primary w-full py-4 text-lg font-bold disabled:opacity-50 relative overflow-hidden group"
                 >
                   {converting ? (
                     <>
                       <div className="dust-spinner border-[var(--dust-black)]" />
-                      <span>Converting...</span>
+                      <span>Sweeping {selectedTokens.size} token{selectedTokens.size > 1 ? 's' : ''}...</span>
                     </>
                   ) : (
                     <>
                       <SwapIcon />
                       <span>
-                        Convert {selectedTokens.size} Token{selectedTokens.size > 1 ? 's' : ''} to {selectedToToken.symbol}
+                        Sweep {selectedTokens.size} Token{selectedTokens.size > 1 ? 's' : ''} → {selectedToToken.symbol}
                       </span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
                     </>
                   )}
               </button>

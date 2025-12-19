@@ -124,13 +124,25 @@
     border-radius: 4px;
   }
 
+  .light ::-webkit-scrollbar-track {
+    background: var(--dust-elevated);
+  }
+
   ::-webkit-scrollbar-thumb {
     background: var(--dust-border-strong);
     border-radius: 4px;
   }
 
+  .light ::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.3);
+  }
+
   ::-webkit-scrollbar-thumb:hover {
     background: var(--dust-gold-500);
+  }
+
+  .light ::-webkit-scrollbar-thumb:hover {
+    background: var(--dust-sapphire);
   }
 }
 
@@ -208,6 +220,17 @@
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+  .light .dust-card {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(248, 249, 250, 0.98) 100%
+    );
+    box-shadow: 
+      0 4px 24px -1px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(59, 130, 246, 0.1) inset;
+  }
+
   .dust-card:hover {
     border-color: var(--dust-border-strong);
     box-shadow: 
@@ -216,15 +239,33 @@
     transform: translateY(-2px);
   }
 
+  .light .dust-card:hover {
+    box-shadow: 
+      0 8px 40px -8px rgba(59, 130, 246, 0.15),
+      0 0 0 1px rgba(59, 130, 246, 0.2) inset;
+  }
+
   .dust-card-flat {
     background: var(--dust-surface);
     border: 1px solid var(--dust-border);
     border-radius: 1rem;
   }
 
+  .light .dust-card-flat {
+    background: var(--dust-surface);
+    border: 1px solid var(--dust-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
   /* Premium stat card */
   .dust-stat-card {
     @apply dust-card p-6 relative overflow-hidden;
+  }
+
+  .light .dust-stat-card {
+    background: var(--dust-surface);
+    border: 1px solid var(--dust-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }
 
   .dust-stat-card::before {
@@ -236,6 +277,10 @@
     height: 120px;
     background: radial-gradient(circle, rgba(251, 191, 36, 0.1) 0%, transparent 70%);
     pointer-events: none;
+  }
+
+  .light .dust-stat-card::before {
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
   }
 
   /* Buttons */
@@ -299,10 +344,21 @@
     font-size: 0.95rem;
   }
 
+  .light .dust-input {
+    background: var(--dust-surface);
+    border: 1px solid var(--dust-border);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
   .dust-input:focus {
     outline: none;
     border-color: var(--dust-gold-500);
     box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15);
+  }
+
+  .light .dust-input:focus {
+    border-color: var(--dust-sapphire);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
 
   .dust-input::placeholder {
