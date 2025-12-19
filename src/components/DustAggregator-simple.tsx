@@ -4,7 +4,7 @@ import confetti from 'canvas-confetti';
 import { ComprehensiveTokenDiscovery } from '../services/ComprehensiveTokenDiscovery';
 import { DustTokenFilter } from '../services/DustTokenFilter';
 import { PriceService } from '../services/PriceService';
-import { BatchSwapService } from '../services/BatchSwapService';
+import { BatchSwapService, FeeBreakdown } from '../services/BatchSwapService';
 import { SwapHistoryService } from '../services/SwapHistoryService';
 import { TokenInfo, DustThresholds, DEFAULT_DUST_THRESHOLDS, CONVERSION_OPTIONS } from '../types/token';
 import { useTheme } from '../contexts/ThemeContext';
@@ -387,10 +387,15 @@ const DustAggregator: React.FC = () => {
               : s
           ));
 
-          // Get quote first to know the output amount
-          const quote = await batchSwapService.getSwapQuote(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
+          // Get quote with fee breakdown
+          const { quote, fee } = await batchSwapService.getSwapQuoteWithFee(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
           const buyAmount = quote.buyAmount || '0';
           const buyAmountFormatted = ethers.formatUnits(buyAmount, selectedToToken.decimals);
+          
+          // Log fee for transparency (optional - can be displayed in UI)
+          if (fee.enabled) {
+            console.log(`💰 Fee: ${fee.bps / 100}% (${fee.feeAmount ? ethers.formatUnits(fee.feeAmount, selectedToToken.decimals) : 'N/A'} ${selectedToToken.symbol})`);
+          }
           
           // Estimate USD value (using token's USD value ratio)
           const tokenValueRatio = token.valueUSD / parseFloat(token.balanceFormatted);
@@ -455,7 +460,7 @@ const DustAggregator: React.FC = () => {
           if (successfulSwaps.includes(token.symbol)) {
             const amountIn = ethers.parseUnits(token.balanceFormatted, token.decimals);
             try {
-              const quote = await batchSwapService.getSwapQuote(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
+              const { quote } = await batchSwapService.getSwapQuoteWithFee(token, selectedToToken, amountIn, slippageTolerance, wallet.address!);
               const buyAmount = BigInt(quote.buyAmount || '0');
               totalReceived += buyAmount;
             } catch {

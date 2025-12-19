@@ -59,11 +59,11 @@
 
 /* Light mode variables */
 .light {
-  /* Core palette - Light theme */
-  --dust-black: #ffffff;
-  --dust-dark: #f8f9fa;
-  --dust-surface: #ffffff;
-  --dust-elevated: #f1f3f5;
+  /* Core palette - Light theme (off-white/cream tones) */
+  --dust-black: #faf9f7;
+  --dust-dark: #f5f4f2;
+  --dust-surface: #fefcfb;
+  --dust-elevated: #f8f7f5;
   --dust-border: rgba(59, 130, 246, 0.15);
   --dust-border-strong: rgba(59, 130, 246, 0.3);
   
@@ -73,11 +73,11 @@
   --dust-text-muted: rgba(26, 26, 26, 0.5);
   
   /* shadcn/ui theme vars - light mode */
-  --background: 0 0% 100%;
+  --background: 30 10% 98%;
   --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
+  --card: 30 10% 99%;
   --card-foreground: 222 47% 11%;
-  --popover: 0 0% 100%;
+  --popover: 30 10% 99%;
   --popover-foreground: 222 47% 11%;
   --primary: 221 83% 53%;
   --primary-foreground: 210 40% 98%;
@@ -156,6 +156,14 @@
       radial-gradient(ellipse 80% 50% at 20% -20%, rgba(251, 191, 36, 0.15) 0%, transparent 50%),
       radial-gradient(ellipse 60% 40% at 80% 0%, rgba(255, 107, 53, 0.1) 0%, transparent 50%),
       radial-gradient(ellipse 50% 80% at 100% 100%, rgba(251, 191, 36, 0.08) 0%, transparent 40%),
+      linear-gradient(180deg, var(--dust-black) 0%, var(--dust-dark) 100%);
+  }
+
+  .light .dust-bg {
+    background: 
+      radial-gradient(ellipse 80% 50% at 20% -20%, rgba(251, 191, 36, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 80% at 100% 100%, rgba(251, 191, 36, 0.04) 0%, transparent 40%),
       linear-gradient(180deg, var(--dust-black) 0%, var(--dust-dark) 100%);
   }
 

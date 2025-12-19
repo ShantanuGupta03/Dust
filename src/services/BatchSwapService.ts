@@ -1,53 +1,78 @@
 import { ethers } from "ethers";
 import { TokenInfo, ConversionOption } from "../types/token";
 
+// ERC20 ABI for approvals
 const ERC20_ABI = [
   "function approve(address spender, uint256 amount) external returns (bool)",
   "function allowance(address owner, address spender) external view returns (uint256)",
 ];
 
+// Base constants
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
 const CHAIN_ID = 8453;
 
-// ✅ Use YOUR proxy endpoints (not 0x API directly!)
+// Use YOUR proxy endpoints (not 0x directly!)
 const ZERO_X_PRICE_URL = "/api/0x-price";
 const ZERO_X_QUOTE_URL = "/api/0x-quote";
 
+// Types returned by your /api/0x-quote (quote + fee)
+export type FeeBreakdown = {
+  enabled: boolean;
+  bps: number;
+  recipient: string | null;
+  token: string | null;
+  usdNotional: number | null;
+  feeAmount: string | null;
+  tiers: any[];
+};
+
+export interface SwapQuote {
+  liquidityAvailable: boolean;
+  buyAmount: string;
+  sellAmount: string;
+  minBuyAmount?: string;
+  issues?: {
+    allowance?: null | { spender: string };
+    balance?: any;
+    simulationIncomplete?: boolean;
+    invalidSourcesPassed?: string[];
+  };
+  transaction: {
+    to: string;
+    data: string;
+    gas: string;   // string in API response
+    value: string; // string in API response
+  };
+  tokenMetadata?: any;
+}
+
 export class BatchSwapService {
   private provider: ethers.JsonRpcProvider;
-  private apiKey: string = '';
 
   constructor(rpcUrl: string = "https://mainnet.base.org") {
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
-    this.apiKey = import.meta.env.VITE_0X_API_KEY || '';
-    
-    if (this.apiKey) {
-      console.log('✅ 0x API key loaded');
-    }
   }
 
-  // Simple headers - no 0x-version or 0x-api-key (handled by proxy!)
+  // No custom headers here — proxy handles 0x-version / api-key
   private getHeaders(): HeadersInit {
     return {
-      'Content-Type': 'application/json',
+      accept: "application/json",
     };
+  }
+
+  private normalizeTo0xToken(addr: string): string {
+    // your app uses zero-address for native ETH
+    return addr === ethers.ZeroAddress ? WETH_ADDRESS : addr;
   }
 
   async getPriceEstimate(
     fromToken: TokenInfo,
     toToken: ConversionOption,
     amountIn: bigint
-  ) {
+  ): Promise<{ buyAmount: string; estimatedGas: string; liquidityAvailable: boolean } | null> {
     try {
-      const sellToken =
-        fromToken.address === ethers.ZeroAddress
-          ? WETH_ADDRESS
-          : fromToken.address;
-
-      const buyToken =
-        toToken.tokenAddress === ethers.ZeroAddress
-          ? WETH_ADDRESS
-          : toToken.tokenAddress;
+      const sellToken = this.normalizeTo0xToken(fromToken.address);
+      const buyToken = this.normalizeTo0xToken(toToken.tokenAddress);
 
       const params = new URLSearchParams({
         chainId: CHAIN_ID.toString(),
@@ -56,82 +81,110 @@ export class BatchSwapService {
         sellAmount: amountIn.toString(),
       });
 
-      // ✅ Use proxy URL (not direct 0x API)
-      const url = `${ZERO_X_PRICE_URL}?${params}`;
-      
-      console.log('Getting price estimate:', fromToken.symbol, '->', toToken.symbol);
-      console.log('URL:', url);
+      const url = `${ZERO_X_PRICE_URL}?${params.toString()}`;
 
-      const res = await fetch(url, { 
-        method: 'GET',
-        headers: this.getHeaders() 
+      const res = await fetch(url, {
+        method: "GET",
+        headers: this.getHeaders(),
       });
-      
+
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('Price estimate error:', res.status, errorText);
+        console.error("Price estimate error:", res.status, errorText);
         return null;
       }
 
       const data = await res.json();
-      console.log('✅ Price estimate received:', data);
 
       return {
         buyAmount: data.buyAmount,
         estimatedGas: data.transaction?.gas ?? "200000",
-        liquidityAvailable: data.liquidityAvailable,
+        liquidityAvailable: !!data.liquidityAvailable,
       };
     } catch (error) {
-      console.error('Error getting price estimate:', error);
+      console.error("Error getting price estimate:", error);
       return null;
     }
   }
 
-  async getSwapQuote(
+  async getSwapQuoteWithFee(
     fromToken: TokenInfo,
     toToken: ConversionOption,
     amountIn: bigint,
-    slippage: number,
-    taker: string
-  ) {
-    const sellToken =
-      fromToken.address === ethers.ZeroAddress
-        ? WETH_ADDRESS
-        : fromToken.address;
+    slippageTolerance: number = 1.0,
+    takerAddress?: string,
+    opts?: { disableFee?: boolean }
+  ): Promise<{ quote: SwapQuote; fee: FeeBreakdown }> {
+    const sellToken = this.normalizeTo0xToken(fromToken.address);
+    const buyToken = this.normalizeTo0xToken(toToken.tokenAddress);
 
-    const buyToken =
-      toToken.tokenAddress === ethers.ZeroAddress
-        ? WETH_ADDRESS
-        : toToken.tokenAddress;
+    // Keep your minimums if you want
+    const minAmount = fromToken.decimals === 6 ? 1000n : 1000000000000n;
+    const actualAmount = amountIn < minAmount ? minAmount : amountIn;
+
+    if (!takerAddress) throw new Error("takerAddress is required for /quote");
 
     const params = new URLSearchParams({
       chainId: CHAIN_ID.toString(),
       sellToken,
       buyToken,
-      sellAmount: amountIn.toString(),
-      slippagePercentage: (slippage / 100).toString(),
-      taker,
+      sellAmount: actualAmount.toString(),
+      slippagePercentage: (slippageTolerance / 100).toString(),
+      taker: takerAddress,
+      recipient: takerAddress,
     });
 
-    // ✅ Use proxy URL
-    const url = `${ZERO_X_QUOTE_URL}?${params}`;
-    
-    console.log('Getting swap quote...');
-    console.log('URL:', url);
+    if (opts?.disableFee) params.set("disableFee", "true");
 
-    const res = await fetch(url, { 
-      method: 'GET',
-      headers: this.getHeaders() 
+    const response = await fetch(`${ZERO_X_QUOTE_URL}?${params.toString()}`, {
+      method: "GET",
+      headers: this.getHeaders(),
     });
-    
-    if (!res.ok) {
-      const err = await res.text();
-      console.error('Quote error:', res.status, err);
-      throw new Error(err);
+
+    const raw = await response.text();
+
+    if (!response.ok) {
+      try {
+        const j = JSON.parse(raw);
+        throw new Error(`Failed to get quote: ${j.error || j.message || raw}`);
+      } catch {
+        throw new Error(`Failed to get quote: ${raw}`);
+      }
     }
 
-    const quote = await res.json();
-    console.log('✅ Swap quote received');
+    const data = JSON.parse(raw);
+
+    const quote: SwapQuote = data.quote;
+    const fee: FeeBreakdown = data.fee;
+
+    if (!quote?.liquidityAvailable) {
+      throw new Error(`No liquidity available for ${fromToken.symbol} -> ${toToken.symbol}`);
+    }
+
+    return { quote, fee };
+  }
+
+  // Convenience wrapper to match your old call sites
+  async getSwapQuote(
+    fromToken: TokenInfo,
+    toToken: ConversionOption,
+    amountIn: bigint,
+    slippageTolerance: number = 1.0,
+    takerAddress?: string,
+    opts?: { disableFee?: boolean }
+  ): Promise<SwapQuote> {
+    const { quote, fee } = await this.getSwapQuoteWithFee(
+      fromToken,
+      toToken,
+      amountIn,
+      slippageTolerance,
+      takerAddress,
+      opts
+    );
+
+    // optional logging (remove if noisy)
+    console.log("Fee breakdown:", fee);
+
     return quote;
   }
 
@@ -143,24 +196,24 @@ export class BatchSwapService {
     try {
       const fromToken: TokenInfo = {
         address: fromTokenAddress,
-        symbol: '',
-        name: '',
+        symbol: "",
+        name: "",
         decimals: 18,
         balance: amountIn.toString(),
-        balanceFormatted: '',
+        balanceFormatted: "",
         valueUSD: 0,
         isDust: false,
       };
-      
+
       const toToken: ConversionOption = {
         tokenAddress: toTokenAddress,
-        symbol: '',
-        name: '',
-        decimals: 18, // Default to 18, will be overridden by actual token
+        symbol: "",
+        name: "",
+        decimals: 18,
       };
 
       const estimate = await this.getPriceEstimate(fromToken, toToken, amountIn);
-      return estimate !== null && estimate.liquidityAvailable;
+      return !!estimate?.liquidityAvailable;
     } catch {
       return false;
     }
@@ -172,27 +225,14 @@ export class BatchSwapService {
     amountIn: bigint
   ): Promise<{ canSwap: boolean; reason?: string; estimatedOutput?: string }> {
     try {
-      console.log('Checking if swap is possible:', fromToken.symbol, '->', toToken.symbol);
-      console.log('Amount:', amountIn.toString());
-      
       const estimate = await this.getPriceEstimate(fromToken, toToken, amountIn);
-      
-      if (!estimate) {
-        return { canSwap: false, reason: 'No price estimate available' };
-      }
-      
-      if (!estimate.liquidityAvailable) {
-        return { canSwap: false, reason: 'No liquidity available' };
-      }
-      
-      console.log('✅ Swap is possible. Output:', estimate.buyAmount);
-      return { 
-        canSwap: true,
-        estimatedOutput: estimate.buyAmount,
-      };
+
+      if (!estimate) return { canSwap: false, reason: "No price estimate available" };
+      if (!estimate.liquidityAvailable) return { canSwap: false, reason: "No liquidity available" };
+
+      return { canSwap: true, estimatedOutput: estimate.buyAmount };
     } catch (error: any) {
-      console.error('Error in canSwap:', error);
-      return { canSwap: false, reason: error.message || 'Unknown error' };
+      return { canSwap: false, reason: error?.message || "Unknown error" };
     }
   }
 
@@ -201,46 +241,59 @@ export class BatchSwapService {
     toToken: ConversionOption,
     amountIn: bigint,
     slippage: number,
-    signer: ethers.Signer
+    signer: ethers.Signer,
+    opts?: { disableFee?: boolean }
   ): Promise<string> {
     const userAddress = await signer.getAddress();
-    
-    console.log('Executing swap:', fromToken.symbol, '->', toToken.symbol);
-    
-    // Get quote
-    const quote = await this.getSwapQuote(fromToken, toToken, amountIn, slippage, userAddress);
-    
-    if (!quote || !quote.transaction) {
-      throw new Error('Failed to get swap quote');
+
+    // 1) Get quote (via proxy) — includes fee if enabled server-side
+    const quote = await this.getSwapQuote(fromToken, toToken, amountIn, slippage, userAddress, opts);
+
+    if (!quote?.transaction?.to || !quote?.transaction?.data) {
+      throw new Error("Invalid quote: missing transaction fields");
     }
 
-    // Check if approval is needed
-    if (fromToken.address !== ethers.ZeroAddress) {
+    // 2) Approve if needed (spender comes from quote issues)
+    const spender = quote.issues?.allowance?.spender;
+
+    const isNative =
+      fromToken.address === ethers.ZeroAddress ||
+      fromToken.address.toLowerCase() === WETH_ADDRESS.toLowerCase(); // WETH usually needs approval; native ETH doesn't
+
+    // Native ETH never needs ERC20 approval
+    if (fromToken.address !== ethers.ZeroAddress && spender && !isNative) {
       const tokenContract = new ethers.Contract(fromToken.address, ERC20_ABI, signer);
-      const spender = quote.transaction.to;
-      const allowance = await tokenContract.allowance(userAddress, spender);
-      
+
+      const allowance: bigint = await tokenContract.allowance(userAddress, spender);
       if (allowance < amountIn) {
-        console.log('Approving token...');
         const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
         await approveTx.wait();
-        console.log('✅ Token approved');
+      }
+    } else if (fromToken.address !== ethers.ZeroAddress && spender && fromToken.address.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+      // WETH *does* need approval; treat it like normal ERC20
+      const tokenContract = new ethers.Contract(fromToken.address, ERC20_ABI, signer);
+      const allowance: bigint = await tokenContract.allowance(userAddress, spender);
+      if (allowance < amountIn) {
+        const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
+        await approveTx.wait();
       }
     }
 
-    // Execute swap
-    console.log('Sending swap transaction...');
+    // 3) Execute swap transaction
+    const gasLimit = quote.transaction.gas
+      ? (BigInt(quote.transaction.gas) * 12n) / 10n // +20%
+      : 500000n;
+
+    const value = quote.transaction.value ? BigInt(quote.transaction.value) : 0n;
+
     const tx = await signer.sendTransaction({
       to: quote.transaction.to,
       data: quote.transaction.data,
-      value: quote.transaction.value || 0,
-      gasLimit: quote.transaction.gas || 500000,
+      value,
+      gasLimit,
     });
 
-    console.log('Transaction sent:', tx.hash);
     const receipt = await tx.wait();
-    console.log('✅ Swap completed:', receipt!.hash);
-    
-    return receipt!.hash;
+    return receipt?.hash ?? tx.hash;
   }
 }
