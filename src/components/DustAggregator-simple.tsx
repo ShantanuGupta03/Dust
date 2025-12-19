@@ -763,14 +763,14 @@ const DustAggregator: React.FC = () => {
         >
           Disconnect
         </button>
-          </div>
+      </div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="dust-card p-2 opacity-0 animate-slide-up" style={{ animationDelay: '0.15s', animationFillMode: 'forwards' }}>
         <div className="flex gap-2">
-          <button
+            <button
             onClick={() => setActiveTab('swap')}
             className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
               activeTab === 'swap'
@@ -779,8 +779,8 @@ const DustAggregator: React.FC = () => {
             }`}
           >
             Swap Tokens
-          </button>
-          <button
+            </button>
+            <button
             onClick={() => setActiveTab('history')}
             className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
               activeTab === 'history'
@@ -789,9 +789,9 @@ const DustAggregator: React.FC = () => {
             }`}
           >
             History & Analytics
-          </button>
+            </button>
+          </div>
         </div>
-      </div>
 
       {/* Success Modal */}
       {successModal && (
@@ -817,7 +817,7 @@ const DustAggregator: React.FC = () => {
           <div className="dust-card max-w-md w-full p-6 animate-in fade-in zoom-in duration-300">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-dust-text-primary">Dust Threshold Settings</h2>
-              <button
+            <button
                 onClick={() => setShowDustSettings(false)}
                 className="text-dust-text-muted hover:text-dust-text-primary transition-colors"
                 aria-label="Close"
@@ -825,8 +825,8 @@ const DustAggregator: React.FC = () => {
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-              </button>
-            </div>
+            </button>
+          </div>
 
             <div className="space-y-4">
               <div>
@@ -855,7 +855,7 @@ const DustAggregator: React.FC = () => {
                     placeholder="10.00"
                   />
                 </div>
-              </div>
+        </div>
 
               <div className="pt-4 border-t border-dust-border-strong">
                 <div className="flex items-center gap-2 text-sm text-dust-text-secondary">
@@ -863,7 +863,7 @@ const DustAggregator: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <p>Changes will be saved automatically and applied to future scans.</p>
-                </div>
+          </div>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -918,7 +918,7 @@ const DustAggregator: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          </div>
+                      </div>
         </div>
       )}
 
@@ -929,12 +929,12 @@ const DustAggregator: React.FC = () => {
             <div>
               <p className="text-dust-secondary text-sm mb-2">Total Tokens</p>
               <p className="dust-heading-lg">{tokens.length}</p>
-            </div>
+                      </div>
             <div className="w-12 h-12 rounded-xl bg-[var(--dust-sapphire)]/20 flex items-center justify-center">
               <CoinsIcon />
-            </div>
-          </div>
-        </div>
+                    </div>
+                  </div>
+              </div>
 
         <button
           onClick={() => setShowDustSettings(true)}
@@ -947,7 +947,7 @@ const DustAggregator: React.FC = () => {
             </div>
             <div className="w-12 h-12 rounded-xl bg-[var(--dust-gold-500)]/20 flex items-center justify-center text-[var(--dust-gold-400)]">
               <SparklesIcon />
-            </div>
+          </div>
           </div>
           <div className="flex items-center justify-between mt-3">
             <p className="text-dust-muted text-xs">Value ≤ ${thresholds.usd.toFixed(2)}</p>
@@ -955,7 +955,7 @@ const DustAggregator: React.FC = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-          </div>
+      </div>
         </button>
 
         <div className="dust-stat-card">
@@ -989,9 +989,9 @@ const DustAggregator: React.FC = () => {
               </svg>
             </div>
           </div>
-        </div>
-      </div>
-
+            </div>
+          </div>
+          
       {/* Token Actions */}
       <div className="dust-card p-6 opacity-0 animate-slide-up" style={{ animationDelay: '0.3s', animationFillMode: 'forwards' }}>
         <div className="flex items-center justify-between mb-6">
@@ -1046,7 +1046,7 @@ const DustAggregator: React.FC = () => {
           </div>
       ) : tokens.length > 0 ? (
         <div className="dust-card p-6 opacity-0 animate-slide-up" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
-          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="dust-heading-md">Your Tokens</h3>
               {selectedTokens.size > 0 && (
@@ -1075,13 +1075,13 @@ const DustAggregator: React.FC = () => {
                     Select All ({tokens.length})
                   </button>
                   {dustTokens.length > 0 && (
-                    <button
-                      onClick={selectAllDustTokens}
+                <button
+                  onClick={selectAllDustTokens}
                       className="dust-btn-ghost text-sm px-3 py-1.5"
                       title={`Select all ${dustTokens.length} dust tokens`}
-                    >
+                >
                       Select All Dust ({dustTokens.length})
-                    </button>
+                </button>
                   )}
                 </>
               )}
@@ -1093,7 +1093,7 @@ const DustAggregator: React.FC = () => {
                   Clear ({selectedTokens.size})
                 </button>
               )}
-            </div>
+              </div>
             {selectedTokens.size > 0 && (
               <div className="text-right">
                 <p className="text-xs text-dust-text-secondary">Total Selected Value</p>
@@ -1105,7 +1105,7 @@ const DustAggregator: React.FC = () => {
                 </p>
               </div>
             )}
-          </div>
+            </div>
 
           {/* Search and Sort Controls */}
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -1175,7 +1175,7 @@ const DustAggregator: React.FC = () => {
               filteredAndSortedTokens.map((token, index) => {
                 const isSelected = selectedTokens.has(token.address);
                 return (
-                  <div
+                <div
                     key={token.address}
                     onClick={() => !converting && toggleTokenSelection(token.address)}
                     className={`dust-token-item cursor-pointer transition-all ${
@@ -1184,8 +1184,8 @@ const DustAggregator: React.FC = () => {
                       converting ? 'pointer-events-none opacity-50' : 'hover:bg-dust-elevated'
                     }`}
                     style={{ animationDelay: `${0.05 * index}s` }}
-                  >
-                    <div className="flex items-center justify-between">
+                >
+                  <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {/* Selection Checkbox */}
                         <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
@@ -1196,7 +1196,7 @@ const DustAggregator: React.FC = () => {
                           {isSelected && (
                             <CheckIcon />
                           )}
-                        </div>
+                      </div>
                         
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${
                           token.isDust 
@@ -1204,7 +1204,7 @@ const DustAggregator: React.FC = () => {
                             : 'bg-[var(--dust-surface)] text-dust-secondary'
                         }`}>
                           {token.symbol?.slice(0, 2) || '??'}
-                        </div>
+                    </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="font-semibold text-dust-primary truncate">{token.symbol || 'UNKNOWN'}</p>
@@ -1212,9 +1212,9 @@ const DustAggregator: React.FC = () => {
                               <span className="dust-badge-gold flex-shrink-0">
                                 <SparklesIcon />
                                 Dust
-                              </span>
-                            )}
-                          </div>
+                        </span>
+                      )}
+                    </div>
                           <p className="text-sm text-dust-muted truncate">{token.name || 'Unknown Token'}</p>
                           <a
                             href={`https://basescan.org/address/${token.address}`}
@@ -1229,8 +1229,8 @@ const DustAggregator: React.FC = () => {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
                           </a>
-                        </div>
-                      </div>
+                  </div>
+                </div>
                       <div className="text-right flex-shrink-0 ml-3">
                         <p className="font-mono font-semibold text-dust-primary">
                           {parseFloat(token.balanceFormatted).toFixed(4)}
@@ -1238,17 +1238,17 @@ const DustAggregator: React.FC = () => {
                         <p className="text-sm text-dust-muted">
                           ${token.valueUSD.toFixed(2)}
                         </p>
-                      </div>
+                        </div>
                       {(() => {
                         const swapStatus = swapStatuses.find(s => s.tokenAddress === token.address);
                         return swapStatus ? (
                           <div className={`flex items-center gap-2 ml-3 ${getStatusColor(swapStatus.status)}`}>
                             {getStatusIcon(swapStatus.status)}
                             <span className="text-xs capitalize">{swapStatus.status}</span>
-                          </div>
+                      </div>
                         ) : null;
                       })()}
-                    </div>
+                </div>
                     {(() => {
                       const swapStatus = swapStatuses.find(s => s.tokenAddress === token.address);
                       return swapStatus?.error ? (
@@ -1277,31 +1277,21 @@ const DustAggregator: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
-        ) : (
-        <div className="dust-card p-12 text-center opacity-0 animate-fade-in" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
-          <CoinsIcon />
-          <p className="text-dust-secondary text-lg mt-4">No tokens found</p>
-          <p className="text-dust-muted text-sm mt-2">Click "Scan Tokens" to discover your tokens</p>
-          </div>
-        )}
 
-      {/* Swap Controls - Show when tokens are selected */}
-      {selectedTokens.size > 0 && (
-        <div className="dust-card p-6 border-[var(--dust-gold-500)]/30 opacity-0 animate-slide-up" style={{ animationDelay: '0.5s', animationFillMode: 'forwards' }}>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center dust-glow-sm">
-              <SwapIcon />
-            </div>
-            <div>
-              <h3 className="dust-heading-md dust-text-gradient">Swap Selected Tokens</h3>
-              <p className="text-dust-secondary text-sm">Convert {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} to {selectedToToken.symbol}</p>
-            </div>
-          </div>
-
-          {/* Conversion Settings */}
+          {/* Swap Controls - Integrated below token list */}
           {selectedTokens.size > 0 && (
-            <>
+            <div className="mt-6 pt-6 border-t border-dust-border">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center">
+                  <SwapIcon />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-dust-primary">Swap Selected Tokens</h4>
+                  <p className="text-sm text-dust-secondary">Convert {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} to {selectedToToken.symbol}</p>
+                </div>
+              </div>
+
+              {/* Conversion Settings */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-semibold text-dust-primary mb-2">
@@ -1339,9 +1329,9 @@ const DustAggregator: React.FC = () => {
                       disabled={converting}
                   />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-dust-muted">%</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
               {/* Summary Card */}
               <div className="p-4 rounded-xl bg-gradient-to-r from-[var(--dust-gold-500)]/10 to-[var(--dust-ember)]/10 border border-[var(--dust-gold-500)]/20 mb-6">
@@ -1371,9 +1361,9 @@ const DustAggregator: React.FC = () => {
                 </p>
               </div>
 
-          {/* Action Buttons */}
+              {/* Action Buttons */}
               <div className="flex flex-col gap-3">
-              <button
+                <button
                   onClick={checkLiquidity}
                   disabled={checkingLiquidity || converting || selectedTokens.size === 0}
                   className="dust-btn-secondary w-full disabled:opacity-50"
@@ -1386,9 +1376,9 @@ const DustAggregator: React.FC = () => {
                   ) : (
                     `Check Liquidity for ${selectedTokens.size} Token${selectedTokens.size > 1 ? 's' : ''}`
                   )}
-              </button>
-              <button
-                onClick={executeConversion}
+                </button>
+                <button
+                  onClick={executeConversion}
                   disabled={converting || selectedTokens.size === 0}
                   className="dust-btn-primary w-full py-4 text-lg font-bold disabled:opacity-50 relative overflow-hidden group"
                 >
@@ -1406,12 +1396,18 @@ const DustAggregator: React.FC = () => {
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
                     </>
                   )}
-              </button>
+                </button>
+              </div>
             </div>
-            </>
           )}
         </div>
-      )}
+        ) : (
+        <div className="dust-card p-12 text-center opacity-0 animate-fade-in" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
+          <CoinsIcon />
+          <p className="text-dust-secondary text-lg mt-4">No tokens found</p>
+          <p className="text-dust-muted text-sm mt-2">Click "Scan Tokens" to discover your tokens</p>
+        </div>
+        )}
         </>
       )}
     </div>
