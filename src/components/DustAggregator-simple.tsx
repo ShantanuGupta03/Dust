@@ -256,7 +256,7 @@ const DustAggregator: React.FC = () => {
     setCheckingLiquidity(true);
     setError(null);
 
-    const selectedTokenInfos = dustTokens.filter(t => selectedTokens.has(t.address));
+    const selectedTokenInfos = tokens.filter(t => selectedTokens.has(t.address));
     
     for (const token of selectedTokenInfos) {
       try {
@@ -312,6 +312,11 @@ const DustAggregator: React.FC = () => {
       newSelection.add(tokenAddress);
     }
     setSelectedTokens(newSelection);
+  };
+
+  const selectAllTokens = () => {
+    const allAddresses = new Set(tokens.map(token => token.address));
+    setSelectedTokens(allAddresses);
   };
 
   const selectAllDustTokens = () => {
@@ -1042,12 +1047,64 @@ const DustAggregator: React.FC = () => {
       ) : tokens.length > 0 ? (
         <div className="dust-card p-6 opacity-0 animate-slide-up" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="dust-heading-md">Your Tokens</h3>
+            <div>
+              <h3 className="dust-heading-md">Your Tokens</h3>
+              {selectedTokens.size > 0 && (
+                <p className="text-sm text-dust-text-secondary mt-1">
+                  {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} selected
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-dust-secondary">
                 {filteredAndSortedTokens.length} of {tokens.length}
               </span>
             </div>
+          </div>
+
+          {/* Selection Controls */}
+          <div className="flex items-center justify-between mb-4 pb-4 border-b border-dust-border">
+            <div className="flex gap-2">
+              {selectedTokens.size < tokens.length && (
+                <>
+                  <button
+                    onClick={selectAllTokens}
+                    className="dust-btn-ghost text-sm px-3 py-1.5"
+                    title="Select all tokens"
+                  >
+                    Select All ({tokens.length})
+                  </button>
+                  {dustTokens.length > 0 && (
+                    <button
+                      onClick={selectAllDustTokens}
+                      className="dust-btn-ghost text-sm px-3 py-1.5"
+                      title={`Select all ${dustTokens.length} dust tokens`}
+                    >
+                      Select All Dust ({dustTokens.length})
+                    </button>
+                  )}
+                </>
+              )}
+              {selectedTokens.size > 0 && (
+                <button
+                  onClick={clearSelection}
+                  className="dust-btn-ghost text-sm px-3 py-1.5"
+                >
+                  Clear ({selectedTokens.size})
+                </button>
+              )}
+            </div>
+            {selectedTokens.size > 0 && (
+              <div className="text-right">
+                <p className="text-xs text-dust-text-secondary">Total Selected Value</p>
+                <p className="text-lg font-bold text-dust-gold-400">
+                  ${tokens
+                    .filter(t => selectedTokens.has(t.address))
+                    .reduce((sum, t) => sum + t.valueUSD, 0)
+                    .toFixed(2)}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Search and Sort Controls */}
@@ -1182,7 +1239,29 @@ const DustAggregator: React.FC = () => {
                           ${token.valueUSD.toFixed(2)}
                         </p>
                       </div>
+                      {(() => {
+                        const swapStatus = swapStatuses.find(s => s.tokenAddress === token.address);
+                        return swapStatus ? (
+                          <div className={`flex items-center gap-2 ml-3 ${getStatusColor(swapStatus.status)}`}>
+                            {getStatusIcon(swapStatus.status)}
+                            <span className="text-xs capitalize">{swapStatus.status}</span>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
+                    {(() => {
+                      const swapStatus = swapStatuses.find(s => s.tokenAddress === token.address);
+                      return swapStatus?.error ? (
+                        <div className="mt-2 pl-12 pr-2">
+                          <div className="flex items-start gap-2 p-2 rounded-lg bg-[var(--dust-ruby)]/10 border border-[var(--dust-ruby)]/20">
+                            <svg className="w-4 h-4 text-[var(--dust-ruby)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="text-xs text-[var(--dust-ruby)] leading-relaxed break-words">{swapStatus.error}</p>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 );
               })
@@ -1207,171 +1286,17 @@ const DustAggregator: React.FC = () => {
           </div>
         )}
 
-      {/* Batch Swap Section */}
-      {dustTokens.length > 0 && (
+      {/* Swap Controls - Show when tokens are selected */}
+      {selectedTokens.size > 0 && (
         <div className="dust-card p-6 border-[var(--dust-gold-500)]/30 opacity-0 animate-slide-up" style={{ animationDelay: '0.5s', animationFillMode: 'forwards' }}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center dust-glow-sm">
-                <SwapIcon />
-              </div>
-              <div>
-                <h3 className="dust-heading-md dust-text-gradient">Sweep Dust Tokens</h3>
-                <p className="text-dust-secondary text-sm">Convert {dustTokens.length} dust token{dustTokens.length !== 1 ? 's' : ''} to {selectedToToken.symbol}</p>
-              </div>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-ember)] flex items-center justify-center dust-glow-sm">
+              <SwapIcon />
             </div>
-            {selectedTokens.size > 0 && (
-              <div className="text-right">
-                <p className="text-xs text-dust-secondary mb-1">Selected</p>
-                <p className="text-lg font-bold text-dust-gold-400">
-                  {selectedTokens.size} / {dustTokens.length}
-                </p>
-                <p className="text-xs text-dust-muted">
-                  ${dustTokens
-                    .filter(t => selectedTokens.has(t.address))
-                    .reduce((sum, t) => sum + t.valueUSD, 0)
-                    .toFixed(2)}
-                </p>
-              </div>
-            )}
-          </div>
-          
-          {/* Quick Actions Bar */}
-          {selectedTokens.size === 0 && (
-            <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-[var(--dust-gold-500)]/10 to-[var(--dust-ember)]/10 border border-[var(--dust-gold-500)]/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-dust-text-primary mb-1">Ready to sweep?</p>
-                  <p className="text-sm text-dust-text-secondary">Select tokens below or click "Select All" to get started</p>
-                </div>
-                <button
-                  onClick={selectAllDustTokens}
-                  className="dust-btn-primary px-4 py-2 text-sm"
-                >
-                  Select All {dustTokens.length}
-                </button>
-              </div>
+            <div>
+              <h3 className="dust-heading-md dust-text-gradient">Swap Selected Tokens</h3>
+              <p className="text-dust-secondary text-sm">Convert {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} to {selectedToToken.symbol}</p>
             </div>
-          )}
-          
-          {/* Token Selection */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="font-semibold text-dust-primary">
-                Select Tokens to Swap
-                {selectedTokens.size > 0 && (
-                  <span className="ml-2 text-sm font-normal text-dust-text-secondary">
-                    ({selectedTokens.size} selected)
-                  </span>
-                )}
-              </h4>
-              <div className="flex gap-2">
-                {selectedTokens.size < dustTokens.length && (
-                  <button 
-                    onClick={selectAllDustTokens} 
-                    className="dust-btn-ghost text-sm px-3 py-1.5"
-                    title={`Select all ${dustTokens.length} dust tokens`}
-                  >
-                    Select All
-                  </button>
-                )}
-                {selectedTokens.size > 0 && (
-                  <button 
-                    onClick={clearSelection} 
-                    className="dust-btn-ghost text-sm px-3 py-1.5"
-                  >
-                    Clear ({selectedTokens.size})
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            {/* Selection Progress Bar */}
-            {dustTokens.length > 0 && (
-              <div className="mb-4">
-                <div className="flex items-center justify-between text-xs text-dust-text-secondary mb-2">
-                  <span>Selection Progress</span>
-                  <span>{selectedTokens.size} / {dustTokens.length}</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-dust-dark overflow-hidden">
-                  <div 
-                    className="h-full rounded-full bg-gradient-to-r from-[var(--dust-gold-500)] to-[var(--dust-ember)] transition-all duration-500"
-                    style={{ width: `${(selectedTokens.size / dustTokens.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-              {dustTokens.map((token) => {
-                const swapStatus = swapStatuses.find(s => s.tokenAddress === token.address);
-                
-                return (
-                <div
-                    key={token.address}
-                    onClick={() => !converting && toggleTokenSelection(token.address)}
-                    className={`dust-token-item cursor-pointer ${
-                      selectedTokens.has(token.address) ? 'selected' : ''
-                    } ${converting ? 'pointer-events-none' : ''}`}
-                >
-                  <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-                          selectedTokens.has(token.address)
-                            ? 'bg-[var(--dust-gold-500)] border-[var(--dust-gold-500)]'
-                            : 'border-dust-strong'
-                        }`}>
-                          {selectedTokens.has(token.address) && (
-                            <CheckIcon />
-                          )}
-                        </div>
-                      <div>
-                          <p className="font-semibold text-dust-primary">{token.symbol}</p>
-                          <p className="text-xs text-dust-muted">{token.name}</p>
-                          <a
-                            href={`https://basescan.org/address/${token.address}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs text-dust-sapphire hover:text-dust-sapphire/80 transition-colors inline-block mt-0.5"
-                            title={token.address}
-                          >
-                            {token.address.slice(0, 6)}...{token.address.slice(-4)}
-                            <svg className="w-3 h-3 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                      </div>
-                    </div>
-                      <div className="flex items-center gap-4">
-                    <div className="text-right">
-                          <p className="font-mono text-sm text-dust-primary">
-                            {parseFloat(token.balanceFormatted).toFixed(4)}
-                          </p>
-                          <p className="text-xs text-dust-muted">${token.valueUSD.toFixed(2)}</p>
-                    </div>
-                        {swapStatus && (
-                          <div className={`flex items-center gap-2 ${getStatusColor(swapStatus.status)}`}>
-                            {getStatusIcon(swapStatus.status)}
-                            <span className="text-xs capitalize">{swapStatus.status}</span>
-                  </div>
-                        )}
-                </div>
-            </div>
-                    {swapStatus?.error && (
-                      <div className="mt-2 pl-9 pr-2">
-                        <div className="flex items-start gap-2 p-2 rounded-lg bg-[var(--dust-ruby)]/10 border border-[var(--dust-ruby)]/20">
-                          <svg className="w-4 h-4 text-[var(--dust-ruby)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-xs text-[var(--dust-ruby)] leading-relaxed break-words">{swapStatus.error}</p>
-                        </div>
-                      </div>
-                    )}
-                </div>
-                );
-              })}
-              </div>
           </div>
 
           {/* Conversion Settings */}
@@ -1430,7 +1355,7 @@ const DustAggregator: React.FC = () => {
                   <div>
                     <p className="text-dust-text-secondary mb-1">Total Value</p>
                     <p className="font-semibold text-dust-text-primary">
-                      ${dustTokens
+                      ${tokens
                         .filter(t => selectedTokens.has(t.address))
                         .reduce((sum, t) => sum + t.valueUSD, 0)
                         .toFixed(2)}
