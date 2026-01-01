@@ -133,6 +133,48 @@ const DustAggregator: React.FC = () => {
     return filter;
   }, [thresholds]);
 
+  const switchToBaseNetwork = async () => {
+    if (!window.ethereum) return false;
+
+    // Base network parameters
+    const baseNetworkParams = {
+      chainId: '0x2105', // 8453 in hex
+      chainName: 'Base',
+      nativeCurrency: {
+        name: 'Ether',
+        symbol: 'ETH',
+        decimals: 18,
+      },
+      rpcUrls: ['https://mainnet.base.org'],
+      blockExplorerUrls: ['https://basescan.org'],
+    };
+
+    try {
+      // Try to switch to Base network
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: baseNetworkParams.chainId }],
+      });
+      return true;
+    } catch (switchError: any) {
+      // If the chain doesn't exist, add it
+      if (switchError.code === 4902 || switchError.code === -32603) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [baseNetworkParams],
+          });
+          return true;
+        } catch (addError) {
+          console.error('Error adding Base network:', addError);
+          return false;
+        }
+      }
+      console.error('Error switching to Base network:', switchError);
+      return false;
+    }
+  };
+
   const connectWallet = async () => {
     if (!window.ethereum) {
       setError('No wallet found. Please install MetaMask or another Web3 wallet.');
@@ -143,18 +185,45 @@ const DustAggregator: React.FC = () => {
     setError(null);
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const network = await provider.getNetwork();
+      // Step 1: Request account access first (this triggers MetaMask popup)
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       
-      if (network.chainId !== 8453n) {
-        setError('Please switch to Base network (Chain ID: 8453) to use this app.');
+      if (!accounts || accounts.length === 0) {
+        setError('Please connect your wallet in MetaMask.');
         setLoading(false);
         return;
       }
-      
-      const accounts = await provider.send('eth_requestAccounts', []);
+
       const address = accounts[0];
 
+      // Step 2: Create provider and check network
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await provider.getNetwork();
+      
+      // Step 3: If not on Base, try to switch
+      if (network.chainId !== 8453n) {
+        setError('Switching to Base network...');
+        const switched = await switchToBaseNetwork();
+        
+        if (!switched) {
+          setError('Please switch to Base network (Chain ID: 8453) to use this app. You can add Base network in MetaMask settings.');
+          setLoading(false);
+          return;
+        }
+
+        // Wait a bit for network switch to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Verify we're on Base now
+        const newNetwork = await provider.getNetwork();
+        if (newNetwork.chainId !== 8453n) {
+          setError('Failed to switch to Base network. Please switch manually in MetaMask.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Step 4: Set wallet state
       setWallet({
         address,
         isConnected: true,
@@ -164,7 +233,14 @@ const DustAggregator: React.FC = () => {
       console.log('Wallet connected:', address);
     } catch (err) {
       console.error('Error connecting wallet:', err);
-      setError(parseErrorMessage(err) || 'Failed to connect wallet. Please try again.');
+      const errorMsg = parseErrorMessage(err);
+      
+      // Handle user rejection
+      if (errorMsg.includes('rejected') || errorMsg.includes('denied') || errorMsg.includes('User rejected')) {
+        setError('Wallet connection was cancelled. Please try again.');
+      } else {
+        setError(errorMsg || 'Failed to connect wallet. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
