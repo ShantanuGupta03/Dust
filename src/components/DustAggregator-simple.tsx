@@ -351,6 +351,7 @@ const DustAggregator: React.FC = () => {
 
   const connectWallet = () => {
     // Show wallet selection modal
+    console.log('Connect wallet clicked, showing modal');
     setShowWalletModal(true);
   };
 
@@ -842,6 +843,7 @@ const DustAggregator: React.FC = () => {
   // Connect Wallet Screen
   if (!wallet.isConnected) {
     return (
+      <>
       <div className="max-w-lg mx-auto opacity-0 animate-fade-in" style={{ animationDelay: '0.1s', animationFillMode: 'forwards' }}>
         <div className="dust-card p-10 text-center">
           <div className="w-24 h-24 mx-auto mb-8 rounded-2xl bg-gradient-to-br from-[var(--dust-gold-400)] to-[var(--dust-gold-600)] flex items-center justify-center dust-glow">
@@ -900,6 +902,73 @@ const DustAggregator: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Wallet Selection Modal */}
+      {showWalletModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="dust-card max-w-md w-full p-6 animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-dust-text-primary">Connect Wallet</h2>
+              <button
+                onClick={() => setShowWalletModal(false)}
+                className="text-dust-text-muted hover:text-dust-text-primary transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-dust-text-secondary mb-6 text-sm">
+              Choose a wallet to connect to your account
+            </p>
+
+            <div className="space-y-2">
+              {getAvailableWallets().map((walletOption) => (
+                <button
+                  key={walletOption.id}
+                  onClick={() => connectToWallet(walletOption)}
+                  disabled={loading}
+                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                    walletOption.isInstalled
+                      ? 'border-dust-border hover:border-dust-gold-500 hover:bg-dust-gold-500/10 cursor-pointer'
+                      : 'border-dust-border/50 opacity-60 cursor-not-allowed'
+                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{walletOption.icon}</span>
+                      <div>
+                        <p className="font-semibold text-dust-text-primary">{walletOption.name}</p>
+                        {!walletOption.isInstalled && (
+                          <p className="text-xs text-dust-text-muted">Click to install</p>
+                        )}
+                      </div>
+                    </div>
+                    {walletOption.isInstalled ? (
+                      <svg className="w-5 h-5 text-dust-sapphire" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-dust-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {getAvailableWallets().filter(w => !w.isInstalled).length > 0 && (
+              <p className="mt-6 text-xs text-dust-text-muted text-center">
+                Don't have a wallet? Install one to get started
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      </>
     );
   }
 
