@@ -288,8 +288,8 @@ export class BatchSwapService {
 
       const allowance: bigint = await tokenContract.allowance(userAddress, spender);
       if (allowance < amountIn) {
-        const approvalAmount = amountIn * 110n / 100n;
-        const approveTx = await tokenContract.approve(spender, approvalAmount);
+        // Approve MaxUint256 for better UX - user only needs to approve once per token
+        const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
         await approveTx.wait();
       }
     } else if (fromToken.address !== ethers.ZeroAddress && spender && fromToken.address.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
@@ -297,8 +297,8 @@ export class BatchSwapService {
       const tokenContract = new ethers.Contract(fromToken.address, ERC20_ABI, signer);
       const allowance: bigint = await tokenContract.allowance(userAddress, spender);
       if (allowance < amountIn) {
-        const approvalAmount = amountIn * 110n / 100n;
-        const approveTx = await tokenContract.approve(spender, approvalAmount);
+        // Approve MaxUint256 for better UX - user only needs to approve once per token
+        const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
         await approveTx.wait();
       }
     }
@@ -318,6 +318,12 @@ export class BatchSwapService {
     });
 
     const receipt = await tx.wait();
+    
+    // Check if transaction was reverted
+    if (receipt?.status === 0) {
+      throw new Error(`Transaction reverted. Hash: ${receipt.hash}. Check Basescan for details.`);
+    }
+    
     return receipt?.hash ?? tx.hash;
   }
 }

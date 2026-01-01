@@ -12,8 +12,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const qs = new URLSearchParams(req.query as any).toString();
     
-    // ✅ Use /swap/permit2/quote instead of /swap/allowance-holder/quote
-    const url = `https://api.0x.org/swap/permit2/quote?${qs}`;
+    // Use /swap/allowance-holder/quote which uses standard ERC20 approvals
+    // This matches our approval logic in BatchSwapService
+    const url = `https://api.0x.org/swap/allowance-holder/quote?${qs}`;
 
     const apiKey = process.env.ZEROX_API_KEY || process.env.VITE_0X_API_KEY;
     

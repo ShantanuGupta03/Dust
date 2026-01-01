@@ -15,7 +15,7 @@ export default async function handler(
 
   try {
     const qs = new URLSearchParams(req.query as any).toString();
-    const url = `https://api.0x.org/swap/permit2/price?${qs}`;
+    const url = `https://api.0x.org/swap/allowance-holder/price?${qs}`;
 
     console.log('Proxying to 0x API:', url);
 
