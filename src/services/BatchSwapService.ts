@@ -272,7 +272,8 @@ export class BatchSwapService {
 
       const allowance: bigint = await tokenContract.allowance(userAddress, spender);
       if (allowance < amountIn) {
-        const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
+        const approvalAmount = amountIn * 110n / 100n;
+        const approveTx = await tokenContract.approve(spender, approvalAmount);
         await approveTx.wait();
       }
     } else if (fromToken.address !== ethers.ZeroAddress && spender && fromToken.address.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
@@ -280,7 +281,8 @@ export class BatchSwapService {
       const tokenContract = new ethers.Contract(fromToken.address, ERC20_ABI, signer);
       const allowance: bigint = await tokenContract.allowance(userAddress, spender);
       if (allowance < amountIn) {
-        const approveTx = await tokenContract.approve(spender, ethers.MaxUint256);
+        const approvalAmount = amountIn * 110n / 100n;
+        const approveTx = await tokenContract.approve(spender, approvalAmount);
         await approveTx.wait();
       }
     }
