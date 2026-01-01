@@ -134,6 +134,12 @@ export class BatchSwapService {
       recipient: takerAddress,
     });
 
+    // Add txOrigin to help wallets recognize the transaction source
+    // This reduces "suspicious transaction" warnings
+    if (typeof window !== 'undefined') {
+      params.set("txOrigin", window.location.origin);
+    }
+
     if (opts?.disableFee) params.set("disableFee", "true");
 
     const response = await fetch(`${ZERO_X_QUOTE_URL}?${params.toString()}`, {

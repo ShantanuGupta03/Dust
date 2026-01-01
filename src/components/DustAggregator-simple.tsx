@@ -198,12 +198,14 @@ const DustAggregator: React.FC = () => {
     setTokens(tokensWithDustFlag);
     setDustTokens(dustTokensList);
     
-    // Clear selection if selected tokens are no longer dust
-    const dustAddresses = new Set(dustTokensList.map(t => t.address));
+    // Only clear selection for tokens that no longer exist in the list
+    // Users should be able to select ANY token, not just dust tokens
+    const currentTokenAddresses = new Set(tokensWithDustFlag.map(t => t.address));
     setSelectedTokens(prev => {
       const filtered = new Set<string>();
       prev.forEach(addr => {
-        if (dustAddresses.has(addr)) {
+        // Keep selection if token still exists in the list (regardless of dust status)
+        if (currentTokenAddresses.has(addr)) {
           filtered.add(addr);
         }
       });
@@ -1341,7 +1343,7 @@ const DustAggregator: React.FC = () => {
                     {selectedTokens.size} token{selectedTokens.size !== 1 ? 's' : ''} selected
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-sm mb-3">
                   <div>
                     <p className="text-dust-text-secondary mb-1">Total Value</p>
                     <p className="font-semibold text-dust-text-primary">
@@ -1356,6 +1358,33 @@ const DustAggregator: React.FC = () => {
                     <p className="font-semibold text-dust-text-primary">{selectedToToken.symbol}</p>
                   </div>
                 </div>
+                
+                {/* Fee Disclosure */}
+                <div className="p-3 rounded-lg bg-[var(--dust-sapphire)]/10 border border-[var(--dust-sapphire)]/20 mb-3">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-[var(--dust-sapphire)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="text-xs text-dust-text-secondary">
+                      <p className="font-semibold text-[var(--dust-sapphire)] mb-1">Platform Fee</p>
+                      <p>A small fee (0.1-1.0% based on swap size) is collected to support the platform. This fee is automatically deducted from your output tokens and sent to the fee recipient address.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Wallet Warning Notice */}
+                <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div className="text-xs text-yellow-600 dark:text-yellow-400">
+                      <p className="font-semibold mb-1">Wallet Security Warning</p>
+                      <p>Your wallet may show a "suspicious transaction" warning. This is normal and safe - it appears because the transaction includes a platform fee recipient. The transaction is legitimate and only swaps your tokens. You will receive the output tokens (minus the fee) directly to your wallet.</p>
+                    </div>
+                  </div>
+                </div>
+
                 <p className="text-xs text-dust-text-secondary mt-3 pt-3 border-t border-[var(--dust-gold-500)]/20">
                   <span className="text-[var(--dust-gold-400)] font-semibold">ℹ️</span> Swaps use 0x DEX aggregator for best prices. Some tokens may lack liquidity.
                 </p>
