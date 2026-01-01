@@ -134,11 +134,9 @@ export class BatchSwapService {
       recipient: takerAddress,
     });
 
-    // Add txOrigin to help wallets recognize the transaction source
-    // This reduces "suspicious transaction" warnings
-    if (typeof window !== 'undefined') {
-      params.set("txOrigin", window.location.origin);
-    }
+    // Note: txOrigin is optional and should be an Ethereum address if provided
+    // We omit it since we don't have a specific dApp address
+    // The wallet warning is addressed through UI disclosure instead
 
     if (opts?.disableFee) params.set("disableFee", "true");
 
