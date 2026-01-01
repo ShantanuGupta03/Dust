@@ -158,11 +158,29 @@ export class BatchSwapService {
 
     const data = JSON.parse(raw);
 
-    const quote: SwapQuote = data.quote;
-    const fee: FeeBreakdown = data.fee;
+    // The 0x API response structure may vary - handle both wrapped and direct responses
+    let quote: SwapQuote;
+    let fee: FeeBreakdown;
 
-    if (!quote?.liquidityAvailable) {
+    if (data.quote) {
+      // Response is wrapped: { quote: {...}, fee: {...} }
+      quote = data.quote;
+      fee = data.fee || { enabled: false, bps: 0, recipient: null, token: null, usdNotional: null, feeAmount: null, tiers: [] };
+    } else {
+      // Response is direct quote object
+      quote = data;
+      fee = { enabled: false, bps: 0, recipient: null, token: null, usdNotional: null, feeAmount: null, tiers: [] };
+    }
+
+    // Check for liquidity - if we have a buyAmount, there's liquidity
+    // The liquidityAvailable field may not always be present in permit2 responses
+    if (!quote?.buyAmount || BigInt(quote.buyAmount || '0') === 0n) {
       throw new Error(`No liquidity available for ${fromToken.symbol} -> ${toToken.symbol}`);
+    }
+
+    // Ensure liquidityAvailable is set for compatibility
+    if (quote.liquidityAvailable === undefined) {
+      quote.liquidityAvailable = true; // If we have buyAmount, liquidity exists
     }
 
     return { quote, fee };
