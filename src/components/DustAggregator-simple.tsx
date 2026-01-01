@@ -16,7 +16,16 @@ import HistoryAnalytics from './HistoryAnalytics';
 declare global {
   interface Window {
     ethereum?: any;
+    rainbow?: any;
   }
+}
+
+interface WalletOption {
+  id: string;
+  name: string;
+  icon: string;
+  provider: any;
+  isInstalled: boolean;
 }
 
 interface WalletState {
@@ -119,6 +128,7 @@ const DustAggregator: React.FC = () => {
   const [sortBy, setSortBy] = useState<'value' | 'name' | 'symbol'>('value');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showDustSettings, setShowDustSettings] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
 
   const { theme, toggleTheme } = useTheme();
   const tokenDiscovery = new ComprehensiveTokenDiscovery();
@@ -133,8 +143,91 @@ const DustAggregator: React.FC = () => {
     return filter;
   }, [thresholds]);
 
-  const switchToBaseNetwork = async () => {
-    if (!window.ethereum) return false;
+  // Detect available wallets
+  const getAvailableWallets = (): WalletOption[] => {
+    const wallets: WalletOption[] = [];
+
+    // Check if window.ethereum exists
+    if (typeof window !== 'undefined' && window.ethereum) {
+      const ethereum = window.ethereum;
+      
+      // Handle multiple providers (some wallets inject an array)
+      const providers = Array.isArray(ethereum.providers) ? ethereum.providers : [ethereum];
+
+      providers.forEach((provider: any) => {
+        if (provider.isMetaMask) {
+          wallets.push({
+            id: 'metamask',
+            name: 'MetaMask',
+            icon: '🦊',
+            provider,
+            isInstalled: true,
+          });
+        } else if (provider.isRainbow) {
+          wallets.push({
+            id: 'rainbow',
+            name: 'Rainbow',
+            icon: '🌈',
+            provider,
+            isInstalled: true,
+          });
+        } else if (provider.isCoinbaseWallet) {
+          wallets.push({
+            id: 'coinbase',
+            name: 'Coinbase Wallet',
+            icon: '🔷',
+            provider,
+            isInstalled: true,
+          });
+        } else if (provider.isBraveWallet) {
+          wallets.push({
+            id: 'brave',
+            name: 'Brave Wallet',
+            icon: '🦁',
+            provider,
+            isInstalled: true,
+          });
+        }
+      });
+
+      // If no specific wallet detected but ethereum exists, add generic option
+      if (wallets.length === 0 && ethereum) {
+        wallets.push({
+          id: 'generic',
+          name: 'Browser Wallet',
+          icon: '💼',
+          provider: ethereum,
+          isInstalled: true,
+        });
+      }
+    }
+
+    // Add install options for popular wallets
+    if (!wallets.some(w => w.id === 'metamask')) {
+      wallets.push({
+        id: 'metamask',
+        name: 'MetaMask',
+        icon: '🦊',
+        provider: null,
+        isInstalled: false,
+      });
+    }
+
+    if (!wallets.some(w => w.id === 'rainbow')) {
+      wallets.push({
+        id: 'rainbow',
+        name: 'Rainbow',
+        icon: '🌈',
+        provider: null,
+        isInstalled: false,
+      });
+    }
+
+    return wallets;
+  };
+
+  const switchToBaseNetwork = async (provider: any) => {
+    if (!provider) return false;
 
     // Base network parameters
     const baseNetworkParams = {
@@ -151,7 +244,7 @@ const DustAggregator: React.FC = () => {
 
     try {
       // Try to switch to Base network
-      await window.ethereum.request({
+      await provider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: baseNetworkParams.chainId }],
       });
@@ -160,7 +253,7 @@ const DustAggregator: React.FC = () => {
       // If the chain doesn't exist, add it
       if (switchError.code === 4902 || switchError.code === -32603) {
         try {
-          await window.ethereum.request({
+          await provider.request({
             method: 'wallet_addEthereumChain',
             params: [baseNetworkParams],
           });
@@ -175,21 +268,32 @@ const DustAggregator: React.FC = () => {
     }
   };
 
-  const connectWallet = async () => {
-    if (!window.ethereum) {
-      setError('No wallet found. Please install MetaMask or another Web3 wallet.');
+  const connectToWallet = async (walletOption: WalletOption) => {
+    if (!walletOption.isInstalled) {
+      // Open wallet install page
+      if (walletOption.id === 'metamask') {
+        window.open('https://metamask.io/download/', '_blank');
+      } else if (walletOption.id === 'rainbow') {
+        window.open('https://rainbow.me/', '_blank');
+      }
       return;
     }
 
+    if (!walletOption.provider) {
+      setError('Wallet provider not available');
+      return;
+    }
+
+    setShowWalletModal(false);
     setLoading(true);
     setError(null);
 
     try {
-      // Step 1: Request account access first (this triggers MetaMask popup)
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // Step 1: Request account access
+      const accounts = await walletOption.provider.request({ method: 'eth_requestAccounts' });
       
       if (!accounts || accounts.length === 0) {
-        setError('Please connect your wallet in MetaMask.');
+        setError('Please connect your wallet.');
         setLoading(false);
         return;
       }
@@ -197,16 +301,16 @@ const DustAggregator: React.FC = () => {
       const address = accounts[0];
 
       // Step 2: Create provider and check network
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider(walletOption.provider);
       const network = await provider.getNetwork();
       
       // Step 3: If not on Base, try to switch
       if (network.chainId !== 8453n) {
         setError('Switching to Base network...');
-        const switched = await switchToBaseNetwork();
+        const switched = await switchToBaseNetwork(walletOption.provider);
         
         if (!switched) {
-          setError('Please switch to Base network (Chain ID: 8453) to use this app. You can add Base network in MetaMask settings.');
+          setError('Please switch to Base network (Chain ID: 8453) to use this app.');
           setLoading(false);
           return;
         }
@@ -217,7 +321,7 @@ const DustAggregator: React.FC = () => {
         // Verify we're on Base now
         const newNetwork = await provider.getNetwork();
         if (newNetwork.chainId !== 8453n) {
-          setError('Failed to switch to Base network. Please switch manually in MetaMask.');
+          setError('Failed to switch to Base network. Please switch manually.');
           setLoading(false);
           return;
         }
@@ -235,7 +339,6 @@ const DustAggregator: React.FC = () => {
       console.error('Error connecting wallet:', err);
       const errorMsg = parseErrorMessage(err);
       
-      // Handle user rejection
       if (errorMsg.includes('rejected') || errorMsg.includes('denied') || errorMsg.includes('User rejected')) {
         setError('Wallet connection was cancelled. Please try again.');
       } else {
@@ -244,6 +347,11 @@ const DustAggregator: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const connectWallet = () => {
+    // Show wallet selection modal
+    setShowWalletModal(true);
   };
 
   const disconnectWallet = () => {
@@ -887,6 +995,72 @@ const DustAggregator: React.FC = () => {
           }}
           onDisconnect={disconnectWallet}
         />
+      )}
+
+      {/* Wallet Selection Modal */}
+      {showWalletModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="dust-card max-w-md w-full p-6 animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-dust-text-primary">Connect Wallet</h2>
+              <button
+                onClick={() => setShowWalletModal(false)}
+                className="text-dust-text-muted hover:text-dust-text-primary transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-dust-text-secondary mb-6 text-sm">
+              Choose a wallet to connect to your account
+            </p>
+
+            <div className="space-y-2">
+              {getAvailableWallets().map((walletOption) => (
+                <button
+                  key={walletOption.id}
+                  onClick={() => connectToWallet(walletOption)}
+                  disabled={loading}
+                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                    walletOption.isInstalled
+                      ? 'border-dust-border hover:border-dust-gold-500 hover:bg-dust-gold-500/10 cursor-pointer'
+                      : 'border-dust-border/50 opacity-60 cursor-not-allowed'
+                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{walletOption.icon}</span>
+                      <div>
+                        <p className="font-semibold text-dust-text-primary">{walletOption.name}</p>
+                        {!walletOption.isInstalled && (
+                          <p className="text-xs text-dust-text-muted">Click to install</p>
+                        )}
+                      </div>
+                    </div>
+                    {walletOption.isInstalled ? (
+                      <svg className="w-5 h-5 text-dust-sapphire" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-dust-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {getAvailableWallets().filter(w => !w.isInstalled).length > 0 && (
+              <p className="mt-6 text-xs text-dust-text-muted text-center">
+                Don't have a wallet? Install one to get started
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Dust Threshold Settings Modal */}
